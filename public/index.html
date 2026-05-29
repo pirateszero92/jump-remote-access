@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jump Server - Remote Access</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/jump-icon.svg">
+  <link rel="shortcut icon" href="/assets/jump-icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">
+      <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Hide Panel" aria-label="Toggle Sidebar">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="logo-mark"><i class="fa-solid fa-network-wired"></i></div>
+      JUMP - Remote Access
+    </div>
+    <div class="topbar-right">
+      <div class="schip"><div class="sdot g" id="chip-websockify"></div>websockify</div>
+      <div class="schip"><div class="sdot g" id="chip-api"></div>API</div>
+      <div class="schip"><div class="sdot a" id="chip-ssh-bridge"></div>SSH bridge</div>
+      <div class="schip"><div class="sdot g"></div><span id="clock">--:--:--</span></div>
+      <div class="vseparator"></div>
+      <button class="logout-btn" onclick="handleLogout()" title="Sign Out"><i class="fa-solid fa-power-off"></i> Logout</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel-left">
+      <div class="pscroll">
+        <div class="psec">
+          <div class="slabel">New Connection</div>
+          <div class="ptabs">
+            <button class="ptab av" id="tab-vnc" onclick="setProto('VNC', this)">Desktop VNC</button>
+            <button class="ptab" id="tab-rdp" onclick="setProto('RDP', this)">Desktop RDP</button>
+            <button class="ptab" id="tab-ssh" onclick="setProto('SSH', this)">Terminal SSH</button>
+          </div>
+
+          <div class="fld">
+            <div class="flabel">IP Address / Hostname</div>
+            <input type="text" id="ip" placeholder="192.168.1.100">
+          </div>
+
+          <div class="fld">
+            <div class="flabel">Port</div>
+            <div class="frow">
+              <input type="number" id="port" value="5900" min="1" max="65535" style="width: 92px;">
+              <select id="quality" style="flex: 1;">
+                <option value="high">Quality: High</option>
+                <option value="med" selected>Quality: Medium</option>
+                <option value="low">Quality: Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fld">
+            <div class="flabel" id="username-label">Username (optional)</div>
+            <input type="text" id="username" placeholder="admin / root">
+          </div>
+
+          <div class="fld rdp-only" id="rdp-auth-wrap" style="display: none;">
+            <div class="flabel">Windows Authentication</div>
+            <select id="auth-mode">
+              <option value="local" selected>Local account</option>
+              <option value="domain">Domain account</option>
+            </select>
+          </div>
+
+          <div class="fld rdp-only" id="rdp-domain-wrap" style="display: none;">
+            <div class="flabel">Domain</div>
+            <input type="text" id="domain" placeholder="CORP">
+            <div class="fhelp">ใช้เมื่อเลือก Domain account (เช่น CORP)</div>
+          </div>
+
+          <div class="fld">
+            <div class="flabel" id="password-label">Password (optional)</div>
+            <div class="pwrap">
+              <input type="password" id="password" placeholder="********">
+              <button class="ptoggle" onclick="togglePass('password', this)" type="button" aria-label="Toggle password visibility"><i class="fa-regular fa-eye"></i></button>
+            </div>
+          </div>
+
+          <div class="fld ssh-only" id="privatekey-wrap" style="display: none;">
+            <div class="flabel">Private Key (PEM)</div>
+            <div class="key-import-row">
+              <textarea id="privateKey" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" rows="5"></textarea>
+              <button class="tool-btn key-upload-btn" onclick="triggerKeyImport()" type="button"><i class="fa-solid fa-upload"></i> Import</button>
+            </div>
+            <input id="key-file" type="file" accept=".pem,.key,.txt,text/plain,application/octet-stream" hidden onchange="importKeyFile(event)">
+            <div class="fhelp">วาง key หรือกด Import จากไฟล์ (.pem, .key) — ถ้า key มี passphrase ให้ใส่ใน Password</div>
+          </div>
+          <div class="fld ssh-only" id="ssh-timeout-wrap" style="display: none;">
+            <div class="flabel">SSH Idle Timeout (minutes)</div>
+            <input type="number" id="ssh-timeout-minutes" min="1" max="240" value="15">
+            <div class="fhelp">กำหนดเวลาตัด session เมื่อไม่มี activity (ปรับใหม่ได้ตลอด)</div>
+          </div>
+
+          <div class="fld">
+            <div class="flabel">Label (optional)</div>
+            <input type="text" id="label" placeholder="e.g. DB-Server-01">
+          </div>
+
+          <button class="btn-conn" id="btn-connect" onclick="handleConnect()" type="button">
+            Connect
+          </button>
+        </div>
+
+        <div class="psec" style="border-bottom: none; padding-bottom: 10px;">
+          <div class="slabel">Saved Targets</div>
+          <div class="saved-tools">
+            <button type="button" class="tool-btn" onclick="triggerImport()">Import JSON</button>
+            <button type="button" class="tool-btn" onclick="exportTargets()">Export JSON</button>
+            <input id="import-file" type="file" accept="application/json,.json" hidden>
+          </div>
+          <div class="fld saved-filter">
+            <div class="flabel">Filter Servers</div>
+            <input type="text" id="target-filter" placeholder="ค้นหา label / IP / protocol / user">
+          </div>
+        </div>
+
+        <div class="tscroll">
+          <div class="tcon" id="tcon">
+            <div class="empty-t">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-right">
+      <div class="vtbar">
+        <div class="vtbar-left">
+          <div class="conn-pill">
+            <span id="vtlabel" style="color: var(--text3);">No active connection</span>
+            <span class="conn-ip" id="vtip" style="display: none;"></span>
+          </div>
+          <div class="conn-meta" id="vtmeta" style="display: none;"></div>
+        </div>
+        <div class="vt-actions" id="vt-actions" style="display: none;">
+          <div class="vt-state" id="vt-state" style="display: none;">
+            <i class="fa-solid fa-circle"></i>
+            <span id="vt-state-text">connected</span>
+          </div>
+          <button class="vt-btn popout" onclick="popOut()" type="button">Pop Out</button>
+          <button class="vt-btn recon" id="btn-reconnect" onclick="reconnectActiveSession()" type="button" style="display: none;">Reconnect</button>
+          <button class="vt-btn disc" onclick="disconnect()" type="button">Disconnect</button>
+        </div>
+      </div>
+
+      <div class="session-tabs-wrap" id="session-tabs-wrap" style="display: none;">
+        <div class="session-tabs" id="session-tabs"></div>
+      </div>
+
+      <div class="vbody">
+        <div class="idle-wrap" id="idle">
+          <div class="iring"></div>
+          <div class="ititle">No Connection</div>
+          <div class="isub">เลือก VNC, RDP หรือ SSH แล้วใส่ IP<br>กด Connect เพื่อเริ่ม session</div>
+        </div>
+
+        <div class="conn-wrap" id="connecting">
+          <div class="conn-spinner"></div>
+          <div class="conn-label" id="conn-label-text">กำลังเชื่อมต่อ...</div>
+          <div class="conn-sub" id="conn-sub-text">กำลังเตรียม session</div>
+        </div>
+
+        <div class="vnc-frame" id="vnc-frame">
+          <div class="session-stage" id="session-stage"></div>
+        </div>
+      </div>
+
+      <div class="ops-console" id="ops-console">
+        <div class="ops-head">
+          <div class="ops-title">Session Activity</div>
+          <div class="ops-tools">
+            <label class="ops-size" for="log-height">
+              Log Height
+              <input type="range" id="log-height" min="120" max="320" step="10" value="160">
+            </label>
+            <button class="ops-btn" id="clear-log" type="button">Clear</button>
+            <button class="ops-btn" id="toggle-log" type="button">Hide</button>
+          </div>
+        </div>
+        <div class="log-panel" id="log-panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="moverlay" id="modal">
+    <div class="modal">
+      <div class="mico"><i class="fa-regular fa-trash-can"></i></div>
+      <div class="mtitle">ลบ Target?</div>
+      <div class="mtarget" id="modal-name">-</div>
+      <div class="msub">ไม่สามารถย้อนกลับได้<br>รายการจะถูกลบออกจากระบบ</div>
+      <div class="mbtns">
+        <button class="mcancel" onclick="closeModal()" type="button">ยกเลิก</button>
+        <button class="mconfirm" onclick="confirmDelete()" type="button">ลบเลย</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"><div class="tdot"></div><span id="toast-msg"></span></div>
+
+  <script src="/app.js?v=1.1.0"></script>
+</body>
+</html>

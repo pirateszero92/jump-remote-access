@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Jump Access Icon">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0f1a2a" />
+      <stop offset="100%" stop-color="#0a111d" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#00d4aa" />
+      <stop offset="100%" stop-color="#4d9fff" />
+    </linearGradient>
+  </defs>
+
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="url(#bg)" />
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="none" stroke="#2a3954" stroke-width="8" />
+
+  <path d="M72 88h112a20 20 0 0 1 20 20v36a20 20 0 0 1-20 20H72a20 20 0 0 1-20-20v-36a20 20 0 0 1 20-20z" fill="#0e1625" stroke="#33435f" stroke-width="8" />
+  <circle cx="92" cy="126" r="10" fill="#00d4aa" />
+  <circle cx="164" cy="126" r="10" fill="#4d9fff" />
+  <path d="M108 126h40" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" />
+
+  <path d="M152 58v34M152 198v-34" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" />
+</svg>

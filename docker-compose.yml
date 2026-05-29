@@ -1,0 +1,22 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: jump-access
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      WEBSOCKIFY_TARGET: http://127.0.0.1:6080
+      TOKEN_TTL_MS: "21600000"
+      APP_USER: "admin"
+      APP_PASS: "password"
+      APP_SECRET: "change-this-to-a-long-random-string"
+      GUACAMOLE_CRYPT_KEY: "JumpRemoteDesktopCryptKey2026!!"
+      GUACD_HOST: "127.0.0.1"
+      GUACD_PORT: "4822"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
