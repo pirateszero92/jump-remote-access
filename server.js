@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');

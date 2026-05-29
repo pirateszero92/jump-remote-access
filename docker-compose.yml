@@ -5,16 +5,23 @@ services:
       dockerfile: Dockerfile.app
     container_name: jump-access
     environment:
-      PORT: "8080"
-      DATA_DIR: /data
-      WEBSOCKIFY_TARGET: http://127.0.0.1:6080
-      TOKEN_TTL_MS: "21600000"
-      APP_USER: "admin"
-      APP_PASS: "password"
-      APP_SECRET: "change-this-to-a-long-random-string"
-      GUACAMOLE_CRYPT_KEY: "JumpRemoteDesktopCryptKey2026!!"
-      GUACD_HOST: "127.0.0.1"
-      GUACD_PORT: "4822"
+      PORT: ${PORT:-8080}
+      DATA_DIR: ${DATA_DIR:-/data}
+      WEBSOCKIFY_TARGET: ${WEBSOCKIFY_TARGET:-http://127.0.0.1:6080}
+      TOKEN_TTL_MS: ${TOKEN_TTL_MS:-21600000}
+      APP_USER: ${APP_USER:-admin}
+      APP_PASS: ${APP_PASS:-password}
+      APP_SECRET: ${APP_SECRET:-change-this-to-a-long-random-string}
+      GUACAMOLE_CRYPT_KEY: ${GUACAMOLE_CRYPT_KEY:-JumpRemoteDesktopCryptKey2026!!}
+      GUACD_HOST: ${GUACD_HOST:-127.0.0.1}
+      GUACD_PORT: ${GUACD_PORT:-4822}
+      GUACAMOLE_WS_PORT: ${GUACAMOLE_WS_PORT:-4824}
+      SSH_DEFAULT_IDLE_TIMEOUT_MS: ${SSH_DEFAULT_IDLE_TIMEOUT_MS:-900000}
+      SSH_MIN_IDLE_TIMEOUT_MS: ${SSH_MIN_IDLE_TIMEOUT_MS:-60000}
+      SSH_MAX_IDLE_TIMEOUT_MS: ${SSH_MAX_IDLE_TIMEOUT_MS:-43200000}
+      SSH_KEEPALIVE_INTERVAL_MS: ${SSH_KEEPALIVE_INTERVAL_MS:-20000}
+      SSH_KEEPALIVE_COUNT_MAX: ${SSH_KEEPALIVE_COUNT_MAX:-4}
+      SSH_READY_TIMEOUT_MS: ${SSH_READY_TIMEOUT_MS:-15000}
     ports:
       - "8080:8080"
     volumes:
