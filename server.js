@@ -16,6 +16,12 @@ const { WebSocketServer } = require('ws');
 
 const { encryptGuacamoleToken, getGuacamoleCryptKey } = require('./lib/guacamole-token');
 const { buildRdpConnectionToken } = require('./lib/rdp-settings');
+const {
+  createRecorder,
+  findSession,
+  getReport,
+  readSessionFile,
+} = require('./lib/ssh-recorder');
 
 const PORT = Number.parseInt(process.env.PORT || '8080', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -38,6 +44,8 @@ const APP_USER = (process.env.APP_USER || 'admin').trim();
 const APP_PASS = (process.env.APP_PASS || 'password').trim();
 const APP_SECRET = process.env.APP_SECRET || crypto.randomBytes(32).toString('hex');
 const GUACAMOLE_CRYPT_KEY = process.env.GUACAMOLE_CRYPT_KEY || APP_SECRET;
+const SSH_RECORD_ENABLED = String(process.env.SSH_RECORD_ENABLED || 'true').toLowerCase() !== 'false';
+const SSH_RECORD_DIR = process.env.SSH_RECORD_DIR || path.join(DATA_DIR, 'ssh-recordings');
 
 const app = express();
 const server = http.createServer(app);
@@ -363,8 +371,89 @@ app.get('/api/health', (_req, res) => {
     guacd: `${GUACD_HOST}:${GUACD_PORT}`,
     activeVncSessions: vncSessions.size,
     activeRdpSessions: rdpSessions.size,
+    sshRecordingEnabled: SSH_RECORD_ENABLED,
+    sshRecordDir: SSH_RECORD_DIR,
     timestamp: nowIso(),
   });
+});
+
+app.get('/api/ssh-recordings/report', async (req, res) => {
+  try {
+    const now = new Date();
+    const year = parseBoundedInteger(req.query.year, now.getFullYear(), 2020, 2100);
+    const month = req.query.month === undefined || req.query.month === ''
+      ? null
+      : parseBoundedInteger(req.query.month, now.getMonth() + 1, 1, 12);
+
+    const report = await getReport(SSH_RECORD_DIR, year, month);
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to load SSH recording report' });
+  }
+});
+
+app.get('/api/ssh-recordings/:sessionId', async (req, res) => {
+  try {
+    const found = await findSession(SSH_RECORD_DIR, String(req.params.sessionId || '').trim());
+    if (!found) {
+      res.status(404).json({ error: 'Recording not found' });
+      return;
+    }
+
+    res.json(found.meta);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to load recording metadata' });
+  }
+});
+
+app.get('/api/ssh-recordings/:sessionId/cast', async (req, res) => {
+  try {
+    const payload = await readSessionFile(
+      SSH_RECORD_DIR,
+      String(req.params.sessionId || '').trim(),
+      'session.cast',
+    );
+
+    if (!payload) {
+      res.status(404).json({ error: 'Recording cast not found' });
+      return;
+    }
+
+    res.type('application/x-ndjson').send(payload.raw);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to load session cast' });
+  }
+});
+
+app.get('/api/ssh-recordings/:sessionId/keys', async (req, res) => {
+  try {
+    const payload = await readSessionFile(
+      SSH_RECORD_DIR,
+      String(req.params.sessionId || '').trim(),
+      'keys.jsonl',
+    );
+
+    if (!payload) {
+      res.status(404).json({ error: 'Keystroke log not found' });
+      return;
+    }
+
+    const lines = payload.raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return { t: 0, keys: line, parseError: true };
+        }
+      });
+
+    res.json({ sessionId: payload.meta.id, entries: lines });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to load keystroke log' });
+  }
 });
 
 app.get('/api/rdp/connect/:token', (req, res) => {
@@ -551,10 +640,14 @@ app.post('/api/session', async (req, res) => {
     if (proto !== 'VNC') {
       if (proto === 'SSH') {
         const token = crypto.randomBytes(18).toString('hex');
+        const username = String(req.body?.user || '').trim();
+        const label = String(req.body?.label || '').trim() || `${username}@${host}`;
+
         sshSessions.set(token, {
           host,
           port,
-          username: String(req.body?.user || '').trim(),
+          username,
+          label,
           password: String(req.body?.pass || ''),
           privateKey: String(req.body?.privateKey || '').trim(),
           createdAt: Date.now(),
@@ -686,6 +779,23 @@ sshWss.on('connection', (ws, req) => {
   let wsKeepAliveTimer = null;
   let closed = false;
   let pendingResize = { cols: 120, rows: 35 };
+  let recorder = null;
+  let endReason = 'closed';
+
+  if (SSH_RECORD_ENABLED) {
+    recorder = createRecorder({
+      enabled: true,
+      baseDir: SSH_RECORD_DIR,
+      meta: {
+        host,
+        port,
+        username,
+        label: sessionData?.label || `${username}@${host}`,
+        cols: pendingResize.cols,
+        rows: pendingResize.rows,
+      },
+    });
+  }
 
   const resetIdleTimer = () => {
     if (closed) {
@@ -697,6 +807,7 @@ sshWss.on('connection', (ws, req) => {
     }
 
     idleTimer = setTimeout(() => {
+      endReason = 'idle-timeout';
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ type: 'status', state: 'idle-timeout', idleTimeoutMs }));
         ws.close(4000, 'idle timeout');
@@ -732,6 +843,14 @@ sshWss.on('connection', (ws, req) => {
     }
 
     ssh.end();
+
+    if (recorder) {
+      const activeRecorder = recorder;
+      recorder = null;
+      activeRecorder.finalize(endReason).catch((error) => {
+        console.error('[SSH-RECORD] Failed to finalize recording:', error.message);
+      });
+    }
   };
 
   wsKeepAliveTimer = setInterval(() => {
@@ -755,8 +874,11 @@ sshWss.on('connection', (ws, req) => {
       ws.send(JSON.stringify({ type: 'status', state: 'ready', idleTimeoutMs }));
 
       stream.on('data', (chunk) => {
+        const text = chunk.toString('utf8');
+        recorder?.recordOutput(text);
+
         if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: 'data', data: chunk.toString('utf8') }));
+          ws.send(JSON.stringify({ type: 'data', data: text }));
           resetIdleTimer();
         }
       });
@@ -790,6 +912,7 @@ sshWss.on('connection', (ws, req) => {
   });
 
   ssh.on('error', (error) => {
+    endReason = 'error';
     if (ws.readyState === ws.OPEN) {
       let message = error.message || 'SSH connection error';
 
@@ -835,7 +958,9 @@ sshWss.on('connection', (ws, req) => {
         return;
       }
 
-      shellStream.write(String(payload.data || ''));
+      const input = String(payload.data || '');
+      recorder?.recordInput(input);
+      shellStream.write(input);
       resetIdleTimer();
       return;
     }
@@ -844,6 +969,7 @@ sshWss.on('connection', (ws, req) => {
       const cols = Number.parseInt(String(payload.cols || ''), 10) || 120;
       const rows = Number.parseInt(String(payload.rows || ''), 10) || 35;
       pendingResize = { cols, rows };
+      recorder?.updateSize(cols, rows);
 
       if (shellStream) {
         shellStream.setWindow(rows, cols, 0, 0);
@@ -967,6 +1093,7 @@ async function boot() {
     console.log(`jump-access listening on http://0.0.0.0:${PORT}`);
     console.log(`websockify proxy target: ${WEBSOCKIFY_TARGET}`);
     console.log(`data directory: ${DATA_DIR}`);
+    console.log(`ssh recording: ${SSH_RECORD_ENABLED ? 'enabled' : 'disabled'} (${SSH_RECORD_DIR})`);
   });
 }
 

@@ -8,6 +8,7 @@ Jump Server UI (ตามดีไซน์ไฟล์ `novnc-jumpserver.html`)
 - RDP remote desktop ผ่าน guacd + guacamole-lite (Windows local/domain, Linux xrdp)
 - SSH terminal ผ่าน WebSocket bridge (ไม่ต้องใช้ ttyd)
 - SSH keepalive + idle timeout ปรับได้ (default 15 นาที)
+- SSH session recording + หน้า Reports (terminal replay, keystroke log, timeline)
 - Docker Compose แบบ image เดียว (Node app + websockify)
 
 ## โครงสร้างหลัก
@@ -19,6 +20,9 @@ Jump Server UI (ตามดีไซน์ไฟล์ `novnc-jumpserver.html`)
 - `data/tokens.cfg` - token map สำหรับ websockify
 - `docker-compose.yml` - รันทั้งระบบ
 - `.env.example` - ตัวอย่างตัวแปร environment (คัดลอกเป็น `.env`)
+- `lib/ssh-recorder.js` - บันทึก SSH session (cast + keystroke)
+- `public/reports.html` - หน้า replay / audit SSH
+- `data/ssh-recordings/` - ที่เก็บ recording (ไม่ commit ข้อมูลจริง)
 
 ## Environment variables (`.env`)
 
@@ -57,6 +61,8 @@ copy .env.example .env        # Windows (cmd)
 | `SSH_KEEPALIVE_INTERVAL_MS` | `20000` | ช่วงส่ง keepalive |
 | `SSH_KEEPALIVE_COUNT_MAX` | `4` | ครั้งที่ไม่ตอบก่อนตัดการเชื่อมต่อ |
 | `SSH_READY_TIMEOUT_MS` | `15000` | รอ SSH handshake สูงสุด |
+| `SSH_RECORD_ENABLED` | `true` | เปิด/ปิดบันทึก SSH session |
+| `SSH_RECORD_DIR` | `DATA_DIR/ssh-recordings` | โฟลเดอร์เก็บ recording |
 
 รายละเอียดและค่าตัวอย่างครบอยู่ใน [.env.example](.env.example)
 
@@ -82,6 +88,8 @@ Docker Compose อ่าน `.env` จากโฟลเดอร์โปรเ
 - noVNC เชื่อมผ่าน `/websockify/?token=...`
 
 2. RDP mode (Remote Desktop)
+- หน้า replay ปรับขนาด terminal อัตโนมัติตามกรอบ (`resize-method: display-update`)
+- ปุ่ม **Pop Out** เปิด session ในหน้าต่างใหม่ (ปิด iframe เดิมก่อน เพื่อไม่ให้ RDP สอง connection)
 - ใส่ `IP` + `Port` (default 3389)
 - ต้องใส่ `Username` + `Password`
 - Windows local: เลือก **Local account**
@@ -102,6 +110,63 @@ Docker Compose อ่าน `.env` จากโฟลเดอร์โปรเ
 
 - รัน `guacd` + `guacamole-lite` ภายใน container เดียวกับ Node app
 - ตั้งค่าใน `.env`: `GUACD_HOST`, `GUACD_PORT`, `GUACAMOLE_CRYPT_KEY`, `GUACAMOLE_WS_PORT`
+
+## SSH session recording & reports
+
+เมื่อ `SSH_RECORD_ENABLED=true` (ค่า default) ทุก SSH session จะถูกบันทึกอัตโนมัติลง `SSH_RECORD_DIR` (default: `DATA_DIR/ssh-recordings`) แยกโฟลเดอร์ตาม **ปี/เดือน/วัน**
+
+### โครงสร้างไฟล์
+
+```
+ssh-recordings/
+  index.json                          # ดัชนี session สำหรับหน้า Reports
+  2026/05/30/20260530-143022-a1b2c3/
+    meta.json                         # host, user, port, label, เวลาเริ่ม/จบ, duration
+    session.cast                      # terminal replay (asciinema v2, เฉพาะ output)
+    keys.jsonl                        # keystroke ทีละบรรทัด { "t": วินาที, "keys": "..." }
+```
+
+| ไฟล์ | รายละเอียด |
+|------|------------|
+| `session.cast` | บันทึก **output จาก SSH** เท่านั้น (ไม่รวม input ซ้ำกับ echo) — ไฟล์เล็ก เล่นย้อนหลังบน terminal ได้ |
+| `keys.jsonl` | log การกดคีย์แยกต่างหาก สำหรับ audit |
+| `meta.json` | metadata หลัง session จบ |
+
+> ใช้รูปแบบ **asciinema cast** แทนวิดีโอ MP4 เพื่อประหยัดพื้นที่และอ่านข้อความใน terminal ได้ชัด
+
+### หน้า Reports
+
+เปิดที่ **http://localhost:8080/reports.html** หรือปุ่ม **Reports** บนแถบด้านบนของหน้าหลัก (ต้อง login)
+
+| ฟีเจอร์ | คำอธิบาย |
+|---------|----------|
+| กรองปี/เดือน | โหลดรายการ session ตามช่วงเวลา |
+| Terminal replay | พื้นที่เต็มจอ — Play / Pause / Reset / ปรับความเร็ว |
+| Timeline ด้านล่าง | แถบเวลา + ลาก seek — จุดสีเขียว = ตำแหน่งที่มี keystroke (hover ดูคีย์) |
+| Sidebar (จอแคบ) | กดปุ่ม ☰ เพื่อเปิดรายการ session แบบ drawer ไม่บังหน้า replay |
+
+### API (ต้อง login)
+
+| Method | Path | คำอธิบาย |
+|--------|------|----------|
+| `GET` | `/api/ssh-recordings/report?year=2026&month=5` | รายการ session แยกตามวัน |
+| `GET` | `/api/ssh-recordings/:sessionId` | metadata |
+| `GET` | `/api/ssh-recordings/:sessionId/cast` | ไฟล์ replay |
+| `GET` | `/api/ssh-recordings/:sessionId/keys` | keystroke log (JSON) |
+
+### หมายเหตุการบันทึก
+
+- **Replay ไม่พิมพ์ซ้ำ:** `session.cast` เก็บเฉพาะ output จาก server (รวม echo ของคำสั่ง) — keystroke อยู่ใน `keys.jsonl` เท่านั้น
+- Recording เก่าที่มี event ประเภท `i` ใน cast จะถูกเล่นเฉพาะ `o` ในหน้า Reports
+- Session ใหม่หลังอัปเดตจะไม่มีปัญหาตัวอักษรซ้ำ (`ssuuddoo` ฯลฯ)
+- ข้อมูล recording **อาจมีรหัสผ่าน** ที่พิมพ์ใน terminal — จำกัดสิทธิ์ login และ backup โฟลเดอร์ `ssh-recordings` ตามนโยบายองค์กร
+- โฟลเดอร์ `data/ssh-recordings/**` ถูก gitignore (เก็บเฉพาะ `.gitkeep` ใน repo)
+
+### ปิดการบันทึก
+
+```env
+SSH_RECORD_ENABLED=false
+```
 
 ## SSH Timeout / Keepalive
 

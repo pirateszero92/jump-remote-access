@@ -52,8 +52,9 @@
   displayHost.appendChild(displaySurface);
 
   function getDisplaySize() {
-    const width = Math.max(640, displayHost.clientWidth || window.innerWidth);
-    const height = Math.max(480, (displayHost.clientHeight || window.innerHeight) - 28);
+    const rect = displayHost.getBoundingClientRect();
+    const width = Math.max(640, Math.floor(rect.width) || displayHost.clientWidth || window.innerWidth);
+    const height = Math.max(480, Math.floor(rect.height) || displayHost.clientHeight || window.innerHeight);
     return { width, height };
   }
 
@@ -69,9 +70,24 @@
       return;
     }
 
-    const { width, height } = getDisplaySize();
-    const scale = Math.min(width / remoteWidth, height / remoteHeight);
+    const containerWidth = displayHost.clientWidth || window.innerWidth;
+    const containerHeight = displayHost.clientHeight || window.innerHeight;
+    if (!containerWidth || !containerHeight) {
+      return;
+    }
+
+    const scale = Math.min(
+      containerWidth / remoteWidth,
+      containerHeight / remoteHeight,
+    );
+
     display.scale(scale > 0 ? scale : 1);
+
+    const bounds = display.getElement();
+    const scaledWidth = remoteWidth * (scale > 0 ? scale : 1);
+    const scaledHeight = remoteHeight * (scale > 0 ? scale : 1);
+    bounds.style.marginLeft = `${Math.max(0, Math.floor((containerWidth - scaledWidth) / 2))}px`;
+    bounds.style.marginTop = `${Math.max(0, Math.floor((containerHeight - scaledHeight) / 2))}px`;
   }
 
   function sendDisplaySize() {
@@ -81,7 +97,7 @@
 
     const { width, height } = getDisplaySize();
     client.sendSize(width, height);
-    fitDisplayToContainer();
+    requestAnimationFrame(fitDisplayToContainer);
   }
 
   function scheduleResize() {
@@ -102,6 +118,31 @@
     notifyParent('connected', false);
     sendDisplaySize();
   }
+
+  function bindDisplayResize(display) {
+    display.onresize = function onDisplayResize() {
+      fitDisplayToContainer();
+      scheduleResize();
+    };
+  }
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleResize();
+    });
+    resizeObserver.observe(displayHost);
+  }
+
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) {
+      return;
+    }
+
+    if (event.data?.type === 'jump-rdp-resize') {
+      scheduleResize();
+    }
+  });
 
   async function connect() {
     const { width, height } = getDisplaySize();
@@ -146,6 +187,7 @@
 
     client = new Guacamole.Client(tunnel);
     const display = client.getDisplay();
+    bindDisplayResize(display);
     displaySurface.appendChild(display.getElement());
 
     client.onstatechange = function onClientState(state) {
@@ -186,7 +228,12 @@
     };
 
     client.connect(connectQuery.toString());
-    window.addEventListener('resize', scheduleResize);
+
+    // Layout inside iframe may settle after first paint
+    requestAnimationFrame(() => {
+      sendDisplaySize();
+      setTimeout(sendDisplaySize, 300);
+    });
   }
 
   connect().catch((error) => {

@@ -1,0 +1,371 @@
+.reports-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reports-topbar .logo {
+  min-width: 0;
+}
+
+.reports-topbar-title {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reports-menu-btn {
+  display: none;
+  margin-right: 4px;
+}
+
+.logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-right: 8px;
+  border-radius: 8px;
+  color: var(--text2);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logo-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.reports-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  top: 52px;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 40;
+}
+
+.sidebar-backdrop.show {
+  display: block;
+}
+
+.reports-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  overflow: auto;
+  z-index: 50;
+}
+
+.reports-filters {
+  display: grid;
+  gap: 8px;
+}
+
+.reports-filters select,
+.reports-filters .btn {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.reports-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.reports-list-wrap {
+  border-top: 1px solid var(--border);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.day-group {
+  margin-bottom: 10px;
+}
+
+.day-group-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin: 0 0 6px;
+}
+
+.session-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.session-item:hover,
+.session-item.active {
+  border-color: var(--accent);
+}
+
+.session-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.session-item-meta {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.reports-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #020917;
+}
+
+.report-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.report-empty,
+.report-detail {
+  position: absolute;
+  inset: 0;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.report-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  font-size: 13px;
+  background: #020917;
+}
+
+.report-empty p {
+  margin: 0;
+}
+
+.report-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #020917;
+}
+
+.replay-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+  flex-shrink: 0;
+}
+
+.replay-session-bar-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
+.replay-session-bar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.replay-controls .flabel {
+  margin: 0;
+  font-size: 10px;
+}
+
+.replay-controls select {
+  min-width: 56px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.replay-controls .vt-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.replay-display {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.replay-terminal {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #020917;
+  box-sizing: border-box;
+}
+
+.replay-terminal .xterm {
+  height: 100%;
+  padding: 2px 4px;
+  box-sizing: border-box;
+}
+
+.replay-terminal .xterm-viewport {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.replay-timeline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--panel2);
+  flex-shrink: 0;
+}
+
+.timeline-time {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text3);
+  min-width: 36px;
+  flex-shrink: 0;
+}
+
+.timeline-time:last-child {
+  text-align: right;
+}
+
+.timeline-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.timeline-markers {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: -3px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.timeline-scrub {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  margin: 0;
+  height: 6px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* Narrow window: sidebar drawer — display always full width */
+@media (max-width: 960px) {
+  .reports-menu-btn {
+    display: inline-flex;
+  }
+
+  .reports-topbar-title {
+    font-size: 13px;
+  }
+
+  .reports-sidebar {
+    position: fixed;
+    left: 0;
+    top: 52px;
+    bottom: 0;
+    width: min(280px, 85vw);
+    max-width: 85vw;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .reports-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .replay-controls .flabel {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .replay-session-bar-label {
+    display: none;
+  }
+
+  .replay-controls select {
+    min-width: 48px;
+  }
+}

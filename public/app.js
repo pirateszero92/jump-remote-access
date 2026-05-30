@@ -225,6 +225,19 @@ function applySessionView(session) {
   });
 }
 
+function notifyEmbeddedRdpSessionsResize() {
+  sessions.forEach((session) => {
+    if (session.proto !== 'RDP' || !session.iframeEl?.contentWindow) {
+      return;
+    }
+
+    session.iframeEl.contentWindow.postMessage(
+      { type: 'jump-rdp-resize' },
+      window.location.origin,
+    );
+  });
+}
+
 function activateSession(sessionId) {
   const next = getSessionById(sessionId);
   if (!next) {
@@ -241,6 +254,7 @@ function activateSession(sessionId) {
 
   renderSessionTabs();
   applySessionView(next);
+  requestAnimationFrame(notifyEmbeddedRdpSessionsResize);
 }
 
 function createSessionPane(url, title) {
@@ -427,8 +441,9 @@ function setSidebarCollapsed(collapsed) {
 
   localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
 
-  // Trigger window resize to notify SSH and VNC canvases to adjust scale/fit
+  // Trigger resize for embedded sessions (VNC/SSH listen on parent resize; RDP uses postMessage)
   window.dispatchEvent(new Event('resize'));
+  notifyEmbeddedRdpSessionsResize();
 }
 
 function toggleSidebar() {
@@ -945,7 +960,15 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
       showHeaderMeta = true;
     } else {
       const sshTimeoutMinutes = getSshTimeoutMinutes();
-      const response = await api('POST', '/session', { ip, port, proto: 'SSH', user, pass, privateKey });
+      const response = await api('POST', '/session', {
+        ip,
+        port,
+        proto: 'SSH',
+        user,
+        pass,
+        privateKey,
+        label: label || `${user}@${ip}`,
+      });
       token = response.token;
 
       if (!token) {
@@ -978,7 +1001,7 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
       authMode,
       proto,
       url,
-      label,
+      label: label || `${user}@${ip}`,
       headerMeta,
       showHeaderMeta,
       status: 'connecting',
@@ -1087,7 +1110,15 @@ async function reconnectSession(session) {
       session.showHeaderMeta = true;
     } else {
       const sshTimeoutMinutes = getSshTimeoutMinutes();
-      const response = await api('POST', '/session', { ip: session.ip, port: session.port, proto: 'SSH', user: session.user, pass: session.pass, privateKey: session.privateKey });
+      const response = await api('POST', '/session', {
+        ip: session.ip,
+        port: session.port,
+        proto: 'SSH',
+        user: session.user,
+        pass: session.pass,
+        privateKey: session.privateKey,
+        label: session.label || `${session.user}@${session.ip}`,
+      });
       token = response.token;
       if (!token) {
         throw new Error('SSH token not created');
@@ -1154,12 +1185,59 @@ async function handleLogout() {
 
 function popOut() {
   const active = getActiveSession();
-  if (!active) {
+  if (!active?.url) {
     return;
   }
 
-  window.open(active.url, '_blank', 'width=1366,height=900,menubar=no,toolbar=no,status=no');
+  // RDP/VNC allow only one live client per session token; blank the iframe first
+  // so Pop Out does not open a second connection and kick the embedded session.
+  if (active.iframeEl) {
+    active.iframeEl.src = 'about:blank';
+  }
+
+  const features = 'width=1366,height=900,menubar=no,toolbar=no,status=no';
+  const popoutWindow = window.open(active.url, `jump-${active.id}`, features);
+
+  if (!popoutWindow) {
+    if (active.iframeEl) {
+      active.iframeEl.src = active.url;
+      if (active.proto === 'RDP') {
+        requestAnimationFrame(notifyEmbeddedRdpSessionsResize);
+      }
+    }
+    addLog('warn', 'Pop-out blocked by browser popup blocker');
+    showToast('เปิดหน้าต่างใหม่ไม่ได้ — อนุญาต pop-up สำหรับ localhost');
+    return;
+  }
+
+  active.poppedOut = true;
+  active.popoutWindow = popoutWindow;
+  updateSessionStatus(active, 'connected', 'popped out');
   addLog('info', `Popped out: ${active.ip}:${active.port}`);
+
+  const watchPopout = setInterval(() => {
+    const session = getSessionById(active.id);
+    if (!session || popoutWindow.closed) {
+      clearInterval(watchPopout);
+    }
+
+    if (!session || !popoutWindow.closed) {
+      return;
+    }
+
+    session.poppedOut = false;
+    session.popoutWindow = null;
+
+    if (session.iframeEl && session.id === activeSessionId) {
+      session.iframeEl.src = session.url;
+      if (session.proto === 'RDP') {
+        requestAnimationFrame(notifyEmbeddedRdpSessionsResize);
+      }
+    }
+
+    updateSessionStatus(session, 'disconnected', 'pop-out closed');
+    addLog('info', `Pop-out closed: ${session.ip}:${session.port}`);
+  }, 500);
 }
 
 function setView(state) {
@@ -1183,6 +1261,7 @@ function handleEmbeddedRdpStatus(event) {
   if (state === 'connected') {
     updateSessionStatus(active, 'connected', 'connected');
     addLog('ok', `RDP session ready -> ${active.ip}:${active.port}`);
+    requestAnimationFrame(notifyEmbeddedRdpSessionsResize);
     return;
   }
 
