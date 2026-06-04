@@ -1,0 +1,67 @@
+/* =====================================================
+   Theme overrides — applied via data-theme on <html>
+   dark   = default (teal on dark, same as :root)
+   light  = slate-inspired light mode
+   system = follows OS prefers-color-scheme
+   ===================================================== */
+
+/* dark: no overrides needed; :root in style.css is already dark */
+
+/* light theme ---------------------------------------- */
+html[data-theme='light'] {
+  --bg: #f0f2f8;
+  --surface: #ffffff;
+  --surface2: #f4f6fb;
+  --surface3: #e6eaf4;
+  --border: #d0d7e8;
+  --border2: #b0bcda;
+  --accent: #0077cc;
+  --accent-dim: rgba(0, 119, 204, 0.12);
+  --red: #cc2200;
+  --red-dim: rgba(204, 34, 0, 0.10);
+  --amber: #b86a00;
+  --amber-dim: rgba(184, 106, 0, 0.12);
+  --blue: #0055bb;
+  --blue-dim: rgba(0, 85, 187, 0.12);
+  --text: #111827;
+  --text2: #4b5c78;
+  --text3: #8899bb;
+}
+
+html[data-theme='light'] body::before {
+  opacity: 0.06;
+}
+
+/* system: follow OS preference ----------------------- */
+/* when OS = dark → use :root defaults (no override needed) */
+/* when OS = light → apply light vars */
+html[data-theme='system'] {
+  /* default to dark — overridden below if OS is light */
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme='system'] {
+    --bg: #f0f2f8;
+    --surface: #ffffff;
+    --surface2: #f4f6fb;
+    --surface3: #e6eaf4;
+    --border: #d0d7e8;
+    --border2: #b0bcda;
+    --accent: #0077cc;
+    --accent-dim: rgba(0, 119, 204, 0.12);
+    --red: #cc2200;
+    --red-dim: rgba(204, 34, 0, 0.10);
+    --amber: #b86a00;
+    --amber-dim: rgba(184, 106, 0, 0.12);
+    --blue: #0055bb;
+    --blue-dim: rgba(0, 85, 187, 0.12);
+    --text: #111827;
+    --text2: #4b5c78;
+    --text3: #8899bb;
+  }
+
+  html[data-theme='system'] body::before {
+    opacity: 0.06;
+  }
+}
+

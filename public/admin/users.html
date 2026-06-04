@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Management - Jump Access</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/jump-icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/admin/admin.css?v=1.1.3">
+</head>
+<body class="admin-page">
+  <div class="topbar">
+    <div class="logo">
+      <a class="logo-link" href="/" title="Back"><i class="fa-solid fa-arrow-left"></i></a>
+      <div class="logo-mark"><i class="fa-solid fa-users-gear"></i></div>
+      User Management
+    </div>
+    <div class="topbar-right">
+      <div class="schip user-chip" id="topbar-user-chip" title="Signed-in user">—</div>
+      <button class="logout-btn" onclick="handleLogout()" type="button"><i class="fa-solid fa-power-off"></i> Logout</button>
+    </div>
+  </div>
+
+  <div class="admin-layout">
+    <div class="admin-head">
+      <h1>Users &amp; assignments</h1>
+      <p class="admin-msg" id="role-hint"></p>
+    </div>
+
+    <!-- Current User Card -->
+    <div class="current-user-card" id="current-user-card">
+      <div class="current-user-info">
+        <div class="current-user-avatar" id="cu-avatar">?</div>
+        <div>
+          <div class="current-user-name" id="cu-name">—</div>
+          <div class="current-user-meta">
+            <span id="cu-username">—</span>
+            <span class="role-badge" id="cu-role-badge">—</span>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary" id="btn-reset-own-password" type="button">
+        <i class="fa-solid fa-key"></i> Reset My Password
+      </button>
+    </div>
+
+    <div class="admin-grid">
+      <section class="admin-card">
+        <h2 id="form-title">Add user</h2>
+        <form class="admin-form" id="user-form">
+          <input type="hidden" id="edit-user-id" value="">
+          <div class="fld">
+            <div class="flabel">Username</div>
+            <input type="text" id="user-username" required autocomplete="off">
+          </div>
+          <div class="fld">
+            <div class="flabel">Display name</div>
+            <input type="text" id="user-display-name" autocomplete="off">
+          </div>
+          <div class="fld">
+            <div class="flabel">Password</div>
+            <input type="password" id="user-password" autocomplete="new-password">
+          </div>
+          <div class="fld">
+            <div class="flabel">Role</div>
+            <select id="user-role" required></select>
+          </div>
+          <div class="fld" id="assign-wrap">
+            <div class="flabel">Assigned targets (role: user)</div>
+            <div class="target-assign-list" id="target-assign-list"></div>
+          </div>
+          <div class="admin-actions">
+            <button class="btn primary" type="submit" id="btn-save-user">Save</button>
+            <button class="btn" type="button" id="btn-cancel-edit" hidden>Cancel</button>
+          </div>
+          <p class="admin-msg" id="form-msg"></p>
+        </form>
+      </section>
+
+      <section class="admin-card">
+        <h2>All users</h2>
+        <div style="overflow:auto;">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Assigned</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="user-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Reset Password Modal -->
+  <div class="rp-overlay" id="rp-modal" role="dialog" aria-modal="true" aria-labelledby="rp-title">
+    <div class="rp-dialog">
+      <div class="rp-header">
+        <div class="rp-icon"><i class="fa-solid fa-key"></i></div>
+        <div>
+          <div class="rp-title" id="rp-title">Reset Password</div>
+          <div class="rp-sub" id="rp-sub">กำหนดรหัสผ่านใหม่</div>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="flabel">New Password</div>
+        <div class="pwrap">
+          <input type="password" id="rp-password" autocomplete="new-password" placeholder="รหัสผ่านใหม่อย่างน้อย 6 ตัว">
+          <button class="ptoggle" type="button" id="rp-toggle" aria-label="Toggle password visibility">
+            <i class="fa-regular fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="flabel">Confirm Password</div>
+        <div class="pwrap">
+          <input type="password" id="rp-confirm" autocomplete="new-password" placeholder="ยืนยันรหัสผ่านอีกครั้ง">
+          <button class="ptoggle" type="button" id="rp-confirm-toggle" aria-label="Toggle confirm visibility">
+            <i class="fa-regular fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <p class="admin-msg" id="rp-msg"></p>
+      <div class="rp-actions">
+        <button class="btn" type="button" id="rp-cancel">ยกเลิก</button>
+        <button class="btn primary" type="button" id="rp-confirm-btn"><i class="fa-solid fa-check"></i> ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/theme.js"></script>
+  <script src="/admin/users.js?v=1.1.3"></script>
+</body>
+</html>

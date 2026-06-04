@@ -27,6 +27,7 @@ let selectedId = null;
 let cachedTargets = [];
 let targetFilterTerm = '';
 let keyImportTargetId = null;
+let currentUser = null;
 
 const importInput = document.getElementById('import-file');
 const targetFilterInput = document.getElementById('target-filter');
@@ -719,8 +720,11 @@ function renderTargets() {
           <div class="tname" title="${esc(target.ip)}:${target.port} - ${target.proto}">${esc(target.name || target.ip)}</div>
         </div>
         <div class="tacts-compact">
+          <button class="tcbtn cb" type="button" title="เชื่อมต่อ" onclick="quickConnect('${target.id}'); event.stopPropagation();"><i class="fa-solid fa-play"></i></button>
+          ${currentUser?.permissions?.manageTargets ? `
           <button class="tcbtn eb" type="button" title="แก้ไข" onclick="toggleEdit('${target.id}'); event.stopPropagation();"><i class="fa-solid fa-pen"></i></button>
           <button class="tcbtn db" type="button" title="ลบ" onclick="askDelete('${target.id}', '${esca(target.name)}'); event.stopPropagation();"><i class="fa-solid fa-trash"></i></button>
+          ` : ''}
         </div>
       </div>
       <div class="tedit" id="edit-${target.id}">
@@ -799,6 +803,11 @@ async function saveEdit(id) {
     showToast('บันทึกไม่สำเร็จ');
   }
 }
+
+window.quickConnect = function quickConnect(id) {
+  selectTarget(id);
+  handleConnect();
+};
 
 async function selectTarget(id) {
   try {
@@ -885,7 +894,7 @@ async function handleConnect() {
   try {
     const alreadySaved = cachedTargets.find((target) => target.ip === ip && target.port === port && target.proto === proto);
 
-    if (!alreadySaved) {
+    if (!alreadySaved && currentUser?.permissions?.manageTargets) {
       await api('POST', '/targets', {
         name: label,
         ip,
@@ -922,7 +931,7 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
     const sessionId = `s${Date.now()}-${++sessionSeq}`;
 
     if (proto === 'VNC') {
-      const response = await api('POST', '/session', { ip, port, proto: 'VNC' });
+      const response = await api('POST', '/session', { ip, port, proto: 'VNC', targetId: selectedId || undefined });
       token = response.token;
 
       if (!token) {
@@ -941,7 +950,16 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
 
       addLog('ok', `VNC token auto-created: ${token.slice(0, 10)}...`);
     } else if (proto === 'RDP') {
-      const response = await api('POST', '/session', { ip, port, proto: 'RDP', user, pass, domain, authMode });
+      const response = await api('POST', '/session', {
+        ip,
+        port,
+        proto: 'RDP',
+        user,
+        pass,
+        domain,
+        authMode,
+        targetId: selectedId || undefined,
+      });
       token = response.token;
 
       if (!token) {
@@ -968,6 +986,7 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
         pass,
         privateKey,
         label: label || `${user}@${ip}`,
+        targetId: selectedId || undefined,
       });
       token = response.token;
 
@@ -992,6 +1011,7 @@ async function startSession({ ip, port, user, pass, privateKey, domain, authMode
     const session = {
       id: sessionId,
       token,
+      targetId: selectedId || null,
       ip,
       port,
       pass,
@@ -1072,7 +1092,12 @@ async function reconnectSession(session) {
     let token = null;
 
     if (session.proto === 'VNC') {
-      const response = await api('POST', '/session', { ip: session.ip, port: session.port, proto: 'VNC' });
+      const response = await api('POST', '/session', {
+        ip: session.ip,
+        port: session.port,
+        proto: 'VNC',
+        targetId: session.targetId || undefined,
+      });
       token = response.token;
       if (!token) {
         throw new Error('VNC token not created');
@@ -1096,6 +1121,7 @@ async function reconnectSession(session) {
         pass: session.pass,
         domain: session.domain,
         authMode: session.authMode,
+        targetId: session.targetId || undefined,
       });
       token = response.token;
       if (!token) {
@@ -1118,6 +1144,7 @@ async function reconnectSession(session) {
         pass: session.pass,
         privateKey: session.privateKey,
         label: session.label || `${session.user}@${session.ip}`,
+        targetId: session.targetId || undefined,
       });
       token = response.token;
       if (!token) {
@@ -1491,12 +1518,86 @@ window.addEventListener('storage', (event) => {
   }
 });
 
+function applyPermissionsUI() {
+  const reportsLink = document.querySelector('a.reports-link[href="/reports.html"]');
+  const usersLink = document.getElementById('users-admin-link');
+  const savedTools = document.getElementById('saved-tools-panel');
+  const newConnectionPanel = document.getElementById('new-connection-panel');
+  const userChip = document.getElementById('user-chip');
+
+  if (reportsLink) {
+    reportsLink.style.display = currentUser?.permissions?.reports ? '' : 'none';
+  }
+
+  if (usersLink) {
+    usersLink.style.display = currentUser?.permissions?.manageUsers ? '' : 'none';
+  }
+
+  if (savedTools) {
+    savedTools.style.display = currentUser?.permissions?.manageTargets ? '' : 'none';
+  }
+
+  if (newConnectionPanel) {
+    newConnectionPanel.style.display = currentUser?.permissions?.manageTargets ? '' : 'none';
+  }
+
+  if (userChip && currentUser) {
+    userChip.textContent = `${currentUser.username} (${currentUser.role})`;
+    userChip.title = currentUser.displayName || currentUser.username;
+  }
+}
+
+async function initThemePicker() {
+  const select = document.getElementById('theme-select');
+  if (!select) {
+    return;
+  }
+
+  try {
+    const themes = await api('GET', '/themes');
+    select.innerHTML = themes.map((t) => `<option value="${t.id}">${t.label}</option>`).join('');
+
+    // Normalize legacy 'default' theme to 'dark'
+    const savedTheme = currentUser?.theme || 'dark';
+    const normalized = savedTheme === 'default' ? 'dark' : savedTheme;
+    select.value = normalized;
+
+    // Attach listener only once
+    if (!select.dataset.listenerAttached) {
+      select.dataset.listenerAttached = '1';
+      select.addEventListener('change', () => {
+        window.jumpTheme?.save(select.value);
+      });
+    }
+  } catch {
+    select.innerHTML = '<option value="dark">🌙 Dark</option><option value="light">☀️ Light</option><option value="system">🖥️ System</option>';
+  }
+}
+
+async function loadProfile() {
+  currentUser = await api('GET', '/me');
+  applyPermissionsUI();
+  if (window.jumpTheme?.apply && currentUser.theme) {
+    window.jumpTheme.apply(currentUser.theme);
+  }
+
+  await initThemePicker();
+  addLog('info', `Signed in as ${currentUser.displayName || currentUser.username} (${currentUser.role})`);
+}
+
 restoreUiPreferences();
 updateProtocolDependentControls();
 refreshSshBridgeChip();
 loadHealth();
 setInterval(loadHealth, 30000);
-loadTargets();
+loadProfile()
+  .catch((error) => {
+    addLog('err', `Profile load failed: ${error.message}`);
+  })
+  .then(() => loadTargets())
+  .catch((error) => {
+    addLog('err', `Targets load failed: ${error.message}`);
+  });
 addLog('info', 'Jump Server UI initialized');
 addLog('ok', 'Dynamic token for VNC is enabled');
 addLog('ok', 'RDP desktop via guacd is enabled');

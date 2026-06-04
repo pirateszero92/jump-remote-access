@@ -10,7 +10,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=1.1.0">
+  <link rel="stylesheet" href="/themes.css">
 </head>
 <body>
   <div class="topbar">
@@ -26,7 +27,13 @@
       <div class="schip"><div class="sdot g" id="chip-api"></div>API</div>
       <div class="schip"><div class="sdot a" id="chip-ssh-bridge"></div>SSH bridge</div>
       <div class="schip"><div class="sdot g"></div><span id="clock">--:--:--</span></div>
+      <div class="schip user-chip" id="user-chip" title="Signed-in user">—</div>
+      <label class="theme-picker" title="Color theme">
+        <span class="flabel">Theme</span>
+        <select id="theme-select"></select>
+      </label>
       <a class="reports-link" href="/reports.html" title="SSH session reports"><i class="fa-solid fa-chart-line"></i> Reports</a>
+      <a class="reports-link" id="users-admin-link" href="/admin/users.html" title="User management"><i class="fa-solid fa-users-gear"></i> Users</a>
       <div class="vseparator"></div>
       <button class="logout-btn" onclick="handleLogout()" title="Sign Out"><i class="fa-solid fa-power-off"></i> Logout</button>
     </div>
@@ -35,7 +42,7 @@
   <div class="main">
     <div class="panel-left">
       <div class="pscroll">
-        <div class="psec">
+        <div class="psec" id="new-connection-panel">
           <div class="slabel">New Connection</div>
           <div class="ptabs">
             <button class="ptab av" id="tab-vnc" onclick="setProto('VNC', this)">Desktop VNC</button>
@@ -114,7 +121,7 @@
 
         <div class="psec" style="border-bottom: none; padding-bottom: 10px;">
           <div class="slabel">Saved Targets</div>
-          <div class="saved-tools">
+          <div class="saved-tools" id="saved-tools-panel">
             <button type="button" class="tool-btn" onclick="triggerImport()">Import JSON</button>
             <button type="button" class="tool-btn" onclick="exportTargets()">Export JSON</button>
             <input id="import-file" type="file" accept="application/json,.json" hidden>
@@ -207,6 +214,7 @@
 
   <div class="toast" id="toast"><div class="tdot"></div><span id="toast-msg"></span></div>
 
-  <script src="/app.js?v=1.2.0"></script>
+  <script src="/theme.js"></script>
+  <script src="/app.js?v=1.3.2"></script>
 </body>
 </html>

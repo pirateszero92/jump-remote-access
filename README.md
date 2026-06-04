@@ -1,4 +1,4 @@
-﻿# jump-access
+# jump-access
 
 Jump Server UI (ตามดีไซน์ไฟล์ `novnc-jumpserver.html`) พร้อม:
 
@@ -8,7 +8,8 @@ Jump Server UI (ตามดีไซน์ไฟล์ `novnc-jumpserver.html`)
 - RDP remote desktop ผ่าน guacd + guacamole-lite (Windows local/domain, Linux xrdp)
 - SSH terminal ผ่าน WebSocket bridge (ไม่ต้องใช้ ttyd)
 - SSH keepalive + idle timeout ปรับได้ (default 15 นาที)
-- SSH session recording + หน้า Reports (terminal replay, keystroke log, timeline)
+- SSH session recording + หน้า Reports (terminal replay, keystroke log, timeline) — **superadmin เท่านั้น**
+- ระบบผู้ใช้หลาย role + หน้าจัดการ Users + เปลี่ยน color theme ได้
 - Docker Compose แบบ image เดียว (Node app + websockify)
 
 ## โครงสร้างหลัก
@@ -111,6 +112,35 @@ Docker Compose อ่าน `.env` จากโฟลเดอร์โปรเ
 - รัน `guacd` + `guacamole-lite` ภายใน container เดียวกับ Node app
 - ตั้งค่าใน `.env`: `GUACD_HOST`, `GUACD_PORT`, `GUACAMOLE_CRYPT_KEY`, `GUACAMOLE_WS_PORT`
 
+## Users, roles & themes
+
+ครั้งแรกที่รัน ระบบสร้าง `data/users.json` จาก `APP_USER` / `APP_PASS` ใน `.env` เป็น **superadmin** (ถ้ายังไม่มีไฟล์)
+
+| Role | สิทธิ์ |
+|------|--------|
+| **superadmin** | ทุกอย่าง + ดู SSH Reports + จัดการ users ทุก role |
+| **admin** | จัดการ targets, สร้าง session, จัดการ users (role `user` เท่านั้น) — **ไม่เข้า Reports** |
+| **user** | เห็นเฉพาะ targets ที่ admin/superadmin assign — connect ได้เฉพาะรายการที่ได้รับมอบหมาย |
+
+### หน้าจัดการผู้ใช้
+
+- **http://localhost:8080/admin/users.html** (superadmin / admin)
+- เพิ่ม / แก้ไข / ลบ user, กำหนด role, assign targets ให้ role `user`
+
+### Color themes
+
+- เลือกได้จาก dropdown **Theme** บนแถบด้านบน (บันทึกใน profile)
+- ธีม: Jump Dark, Ocean Blue, Sunset Amber, Forest Green, Slate Light
+
+### API ผู้ใช้
+
+| Method | Path | สิทธิ์ |
+|--------|------|--------|
+| `GET` | `/api/me` | ทุก role ที่ login แล้ว |
+| `PUT` | `/api/me/theme` | ทุก role |
+| `GET` | `/api/themes` | ทุก role |
+| `GET/POST/PUT/DELETE` | `/api/users` | superadmin, admin |
+
 ## SSH session recording & reports
 
 เมื่อ `SSH_RECORD_ENABLED=true` (ค่า default) ทุก SSH session จะถูกบันทึกอัตโนมัติลง `SSH_RECORD_DIR` (default: `DATA_DIR/ssh-recordings`) แยกโฟลเดอร์ตาม **ปี/เดือน/วัน**
@@ -136,7 +166,7 @@ ssh-recordings/
 
 ### หน้า Reports
 
-เปิดที่ **http://localhost:8080/reports.html** หรือปุ่ม **Reports** บนแถบด้านบนของหน้าหลัก (ต้อง login)
+เปิดที่ **http://localhost:8080/reports.html** หรือปุ่ม **Reports** บนแถบด้านบน (**superadmin เท่านั้น**)
 
 | ฟีเจอร์ | คำอธิบาย |
 |---------|----------|
@@ -240,8 +270,17 @@ npm start
 
 > Local run ต้องมี websockify และ guacd แยกต่างหาก หรือชี้ `WEBSOCKIFY_TARGET` / `GUACD_*` ไปยังบริการที่รันอยู่แล้ว — แนะนำใช้ Docker Compose สำหรับ stack ครบชุด
 
+## ข้อเสนอเพิ่มเติม (roadmap)
+
+- **Audit log** — บันทึกว่า user คนไหน connect target ไหน เมื่อไหร่ (แยกจาก SSH cast)
+- **2FA / LDAP** — ผูก Active Directory หรือ TOTP สำหรับ production
+- **Session approval** — user ขอ connect แล้วรอ admin อนุมัติ
+- **Target groups** — จัดกลุ่ม server แล้ว assign ทีละกลุ่มแทนรายการเดียว
+- **Recording retention** — ลบ SSH recording เก่ากว่า N วันอัตโนมัติ
+
 ## หมายเหตุ
 
+- หลังอัปเดตนี้ต้อง **login ใหม่** (session เดิมแบบ `authenticated` ใช้ไม่ได้)
 - เหมาะกับสภาพแวดล้อม DHCP จำนวนมาก: ใส่ IP แล้ว connect ได้ทันที
 - ไม่ต้องสร้าง VNC token เอง
 - token มีอายุ 6 ชั่วโมง (ตั้งค่าได้ผ่าน `TOKEN_TTL_MS` ใน `.env`)

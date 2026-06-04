@@ -492,8 +492,23 @@
   }
 
   window.handleLogout = handleLogout;
+  async function ensureAccess() {
+    const response = await fetch('/api/me', { credentials: 'same-origin' });
+    if (!response.ok) {
+      window.location.href = '/login.html';
+      return;
+    }
+
+    const profile = await response.json();
+    if (!profile.permissions?.reports) {
+      window.location.href = '/';
+    }
+  }
+
   initYearOptions();
-  loadReport().catch((error) => {
+  ensureAccess()
+    .then(() => loadReport())
+    .catch((error) => {
     sessionListEl.innerHTML = `<p class="reports-hint">${error.message}</p>`;
   });
 })();

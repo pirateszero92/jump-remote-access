@@ -22,6 +22,33 @@ const {
   getReport,
   readSessionFile,
 } = require('./lib/ssh-recorder');
+const {
+  loadRequestUser,
+  setSessionCookie,
+  clearSessionCookie,
+} = require('./lib/auth-session');
+const {
+  configureUsersStore,
+  ensureUsersFile,
+  listUsers,
+  authenticate,
+  createUser,
+  updateUser,
+  deleteUser,
+  findById,
+} = require('./lib/users');
+const { listThemes, normalizeThemeId } = require('./lib/themes');
+const {
+  ROLES,
+  canViewReports,
+  canManageUsers,
+  canManageTarget,
+  actorCanManageUser,
+  actorCanAssignRole,
+  filterTargetsForUser,
+  userCanAccessTarget,
+  findTargetForSession,
+} = require('./lib/permissions');
 
 const PORT = Number.parseInt(process.env.PORT || '8080', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -175,6 +202,8 @@ function normalizeTargetPayload(payload, current = null) {
 
 async function ensureDataFiles() {
   await fsp.mkdir(DATA_DIR, { recursive: true });
+  configureUsersStore(DATA_DIR);
+  await ensureUsersFile(APP_USER, APP_PASS);
 
   if (!fs.existsSync(TARGETS_FILE)) {
     await fsp.writeFile(TARGETS_FILE, '[]\n', 'utf8');
@@ -183,6 +212,35 @@ async function ensureDataFiles() {
   if (!fs.existsSync(TOKENS_FILE)) {
     await fsp.writeFile(TOKENS_FILE, '', 'utf8');
   }
+}
+
+async function assertCanStartSession(user, body) {
+  const proto = normalizeProto(body?.proto, 'VNC');
+  const host = String(body?.ip || '').trim();
+  const port = parsePort(body?.port, defaultPortByProto(proto));
+
+  if (!isValidHost(host) || !port) {
+    throw new Error('Invalid host or port');
+  }
+
+  if (user.role === ROLES.SUPERADMIN || user.role === ROLES.ADMIN) {
+    return { proto, host, port };
+  }
+
+  const targets = await readTargets();
+  const visible = filterTargetsForUser(targets, user);
+  const target = findTargetForSession(visible, {
+    targetId: body?.targetId,
+    ip: host,
+    port,
+    proto,
+  });
+
+  if (!target) {
+    throw new Error('You are not allowed to connect to this target');
+  }
+
+  return { proto, host, port, target };
 }
 
 async function readTargets() {
@@ -274,37 +332,55 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser(APP_SECRET));
 
-function checkAuth(req, res, next) {
-  const publicPaths = ['/api/login', '/login.html', '/login.js', '/style.css'];
-  const publicPrefixes = ['/vendor/', '/assets/'];
+const PUBLIC_PATHS = new Set([
+  '/api/login',
+  '/login.html',
+  '/login.js',
+  '/style.css',
+  '/themes.css',
+  '/theme.js',
+]);
 
-  if (publicPaths.includes(req.path) || publicPrefixes.some(p => req.path.startsWith(p))) {
-    return next();
-  }
+const PUBLIC_PREFIXES = ['/vendor/', '/assets/', '/admin/admin.css'];
 
-  const sessionToken = req.signedCookies.session_token;
-  if (sessionToken === 'authenticated') {
-    // Refresh / slide the session cookie
-    res.cookie('session_token', 'authenticated', {
-      httpOnly: true,
-      signed: true,
-      maxAge: SESSION_TTL_MS,
-      sameSite: 'lax',
-      path: '/',
-    });
-    return next();
-  }
-
-  if (req.path.startsWith('/api/')) {
-    console.warn(`[AUTH] Unauthorized API request to ${req.path} from ${req.ip}`);
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  console.info(`[AUTH] Redirecting unauthorized request ${req.path} to login`);
-  res.redirect('/login.html');
+function isPublicRequest(req) {
+  return PUBLIC_PATHS.has(req.path) || PUBLIC_PREFIXES.some((prefix) => req.path.startsWith(prefix));
 }
 
-app.use(checkAuth);
+async function attachUser(req, res, next) {
+  if (isPublicRequest(req)) {
+    return next();
+  }
+
+  const user = await loadRequestUser(req.signedCookies?.session_token);
+  if (!user) {
+    if (req.path.startsWith('/api/')) {
+      console.warn(`[AUTH] Unauthorized API request to ${req.path} from ${req.ip}`);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    console.info(`[AUTH] Redirecting unauthorized request ${req.path} to login`);
+    return res.redirect('/login.html');
+  }
+
+  req.user = user;
+  setSessionCookie(res, user, { maxAge: SESSION_TTL_MS });
+  return next();
+}
+
+function requireRoles(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    return next();
+  };
+}
+
+app.use((req, res, next) => {
+  attachUser(req, res, next).catch(next);
+});
 
 const websockifyProxy = createProxyMiddleware({
   target: WEBSOCKIFY_TARGET,
@@ -329,7 +405,6 @@ app.use('/novnc', express.static(path.join(__dirname, 'novnc')));
 app.use('/ssh', express.static(path.join(__dirname, 'public', 'ssh')));
 app.use('/rdp', express.static(path.join(__dirname, 'public', 'rdp')));
 app.use('/vendor/guacamole', express.static(path.join(__dirname, 'node_modules', 'guacamole-common-js', 'dist', 'cjs')));
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.get('/login.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -339,29 +414,161 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.post('/api/login', (req, res) => {
-  const { user, pass } = req.body;
-
-  if (user === APP_USER && pass === APP_PASS) {
-    console.info(`[AUTH] Login successful for user: ${user}`);
-    res.cookie('session_token', 'authenticated', {
-      httpOnly: true,
-      signed: true,
-      maxAge: SESSION_TTL_MS,
-      sameSite: 'lax',
-      path: '/',
-    });
-    return res.json({ status: 'ok' });
+app.get('/reports.html', (req, res) => {
+  if (!req.user) {
+    res.redirect('/login.html');
+    return;
   }
 
-  console.warn(`[AUTH] Login failed for user: ${user}`);
+  if (!canViewReports(req.user)) {
+    res.status(403).send('Forbidden: reports are superadmin only');
+    return;
+  }
 
-  res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+  res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+});
+
+app.get('/admin/users.html', (req, res) => {
+  if (!req.user) {
+    res.redirect('/login.html');
+    return;
+  }
+
+  if (!canManageUsers(req.user)) {
+    res.redirect('/');
+    return;
+  }
+
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'users.html'));
+});
+
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+app.post('/api/login', async (req, res) => {
+  const username = String(req.body?.user || '').trim();
+  const password = String(req.body?.pass || '');
+
+  try {
+    const user = await authenticate(username, password);
+    if (!user) {
+      console.warn(`[AUTH] Login failed for user: ${username}`);
+      res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+      return;
+    }
+
+    console.info(`[AUTH] Login successful for user: ${user.username} (${user.role})`);
+    setSessionCookie(res, user, { maxAge: SESSION_TTL_MS });
+    res.json({
+      status: 'ok',
+      user: {
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName,
+        theme: user.theme,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Login failed' });
+  }
 });
 
 app.post('/api/logout', (req, res) => {
-  res.clearCookie('session_token');
+  clearSessionCookie(res);
   res.json({ status: 'ok' });
+});
+
+app.get('/api/me', (req, res) => {
+  res.json({
+    ...req.user,
+    permissions: {
+      reports: canViewReports(req.user),
+      manageUsers: canManageUsers(req.user),
+      manageTargets: canManageTarget(req.user),
+    },
+  });
+});
+
+app.get('/api/themes', (_req, res) => {
+  res.json(listThemes());
+});
+
+app.put('/api/me/theme', async (req, res) => {
+  try {
+    const theme = normalizeThemeId(req.body?.theme);
+    const updated = await updateUser(req.user.id, { theme });
+    res.json({ theme: updated.theme });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to update theme' });
+  }
+});
+
+app.get('/api/users', requireRoles(ROLES.SUPERADMIN, ROLES.ADMIN), async (_req, res) => {
+  const users = await listUsers();
+  res.json(users);
+});
+
+app.post('/api/users', requireRoles(ROLES.SUPERADMIN, ROLES.ADMIN), async (req, res) => {
+  try {
+    if (!actorCanAssignRole(req.user, req.body?.role)) {
+      res.status(403).json({ error: 'Forbidden role assignment' });
+      return;
+    }
+
+    const user = await createUser(req.body);
+    res.status(201).json(user);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to create user' });
+  }
+});
+
+app.put('/api/users/:id', requireRoles(ROLES.SUPERADMIN, ROLES.ADMIN), async (req, res) => {
+  try {
+    const target = await findById(req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (!actorCanManageUser(req.user, target)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (req.body?.role !== undefined && !actorCanAssignRole(req.user, req.body.role)) {
+      res.status(403).json({ error: 'Forbidden role assignment' });
+      return;
+    }
+
+    const user = await updateUser(req.params.id, req.body);
+    res.json(user);
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to update user' });
+  }
+});
+
+app.delete('/api/users/:id', requireRoles(ROLES.SUPERADMIN, ROLES.ADMIN), async (req, res) => {
+  try {
+    const target = await findById(req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (!actorCanManageUser(req.user, target)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (target.id === req.user.id) {
+      res.status(400).json({ error: 'Cannot delete your own account' });
+      return;
+    }
+
+    await deleteUser(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Unable to delete user' });
+  }
 });
 
 app.get('/api/health', (_req, res) => {
@@ -377,7 +584,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.get('/api/ssh-recordings/report', async (req, res) => {
+app.get('/api/ssh-recordings/report', requireRoles(ROLES.SUPERADMIN), async (req, res) => {
   try {
     const now = new Date();
     const year = parseBoundedInteger(req.query.year, now.getFullYear(), 2020, 2100);
@@ -392,7 +599,7 @@ app.get('/api/ssh-recordings/report', async (req, res) => {
   }
 });
 
-app.get('/api/ssh-recordings/:sessionId', async (req, res) => {
+app.get('/api/ssh-recordings/:sessionId', requireRoles(ROLES.SUPERADMIN), async (req, res) => {
   try {
     const found = await findSession(SSH_RECORD_DIR, String(req.params.sessionId || '').trim());
     if (!found) {
@@ -406,7 +613,7 @@ app.get('/api/ssh-recordings/:sessionId', async (req, res) => {
   }
 });
 
-app.get('/api/ssh-recordings/:sessionId/cast', async (req, res) => {
+app.get('/api/ssh-recordings/:sessionId/cast', requireRoles(ROLES.SUPERADMIN), async (req, res) => {
   try {
     const payload = await readSessionFile(
       SSH_RECORD_DIR,
@@ -425,7 +632,7 @@ app.get('/api/ssh-recordings/:sessionId/cast', async (req, res) => {
   }
 });
 
-app.get('/api/ssh-recordings/:sessionId/keys', async (req, res) => {
+app.get('/api/ssh-recordings/:sessionId/keys', requireRoles(ROLES.SUPERADMIN), async (req, res) => {
   try {
     const payload = await readSessionFile(
       SSH_RECORD_DIR,
@@ -494,13 +701,19 @@ app.get('/api/rdp/connect/:token', (req, res) => {
   }
 });
 
-app.get('/api/targets', async (_req, res) => {
+app.get('/api/targets', async (req, res) => {
   const targets = await readTargets();
-  targets.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  res.json(targets);
+  const visible = filterTargetsForUser(targets, req.user);
+  visible.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  res.json(visible);
 });
 
 app.post('/api/targets', async (req, res) => {
+  if (!canManageTarget(req.user)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
   try {
     const targets = await readTargets();
     const next = normalizeTargetPayload(req.body);
@@ -515,6 +728,11 @@ app.post('/api/targets', async (req, res) => {
 });
 
 app.put('/api/targets/:id', async (req, res) => {
+  if (!canManageTarget(req.user)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
   try {
     const targets = await readTargets();
     const index = targets.findIndex((entry) => entry.id === req.params.id);
@@ -535,6 +753,11 @@ app.put('/api/targets/:id', async (req, res) => {
 });
 
 app.delete('/api/targets/:id', async (req, res) => {
+  if (!canManageTarget(req.user)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
   const targets = await readTargets();
   const next = targets.filter((entry) => entry.id !== req.params.id);
 
@@ -547,7 +770,12 @@ app.delete('/api/targets/:id', async (req, res) => {
   res.status(204).send();
 });
 
-app.get('/api/targets/export', async (_req, res) => {
+app.get('/api/targets/export', async (req, res) => {
+  if (!canManageTarget(req.user)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
   const targets = await readTargets();
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -560,6 +788,11 @@ app.get('/api/targets/export', async (_req, res) => {
 });
 
 app.post('/api/targets/import', async (req, res) => {
+  if (!canManageTarget(req.user)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
   try {
     const replace = req.body?.replace !== false;
     const payloadTargets = Array.isArray(req.body)
@@ -623,19 +856,10 @@ app.post('/api/targets/import', async (req, res) => {
 
 app.post('/api/session', async (req, res) => {
   try {
-    const proto = normalizeProto(req.body?.proto, 'VNC');
-    const host = String(req.body?.ip || '').trim();
-
-    if (!isValidHost(host)) {
-      res.status(400).json({ error: 'Invalid IP/hostname' });
-      return;
-    }
-
-    const port = parsePort(req.body?.port, defaultPortByProto(proto));
-    if (!port) {
-      res.status(400).json({ error: 'Invalid port' });
-      return;
-    }
+    const allowed = await assertCanStartSession(req.user, req.body);
+    const proto = allowed.proto;
+    const host = allowed.host;
+    const port = allowed.port;
 
     if (proto !== 'VNC') {
       if (proto === 'SSH') {
@@ -725,6 +949,358 @@ app.delete('/api/session/:token', async (req, res) => {
   }
 
   res.status(removedVnc || removedSsh || removedRdp ? 204 : 404).send();
+});
+
+function getSshParamsFromRequest(req) {
+  const token = req.query.token || req.headers['x-jump-token'];
+  let sessionData = null;
+  if (token && sshSessions.has(token)) {
+    sessionData = sshSessions.get(token);
+  }
+  const host = sessionData ? sessionData.host : String(req.query.host || '').trim();
+  const username = sessionData ? sessionData.username : String(req.query.username || '').trim();
+  const password = sessionData ? sessionData.password : String(req.query.password || '');
+  const privateKey = sessionData ? sessionData.privateKey : String(req.query.privateKey || '').trim();
+  const port = sessionData ? sessionData.port : parsePort(req.query.port, 22);
+
+  if (!isValidHost(host) || !port || !username) {
+    return null;
+  }
+
+  const connectOptions = {
+    host,
+    port,
+    username,
+    readyTimeout: SSH_READY_TIMEOUT_MS,
+  };
+  if (privateKey) {
+    connectOptions.privateKey = privateKey;
+    if (password) {
+      connectOptions.passphrase = password;
+    }
+  } else {
+    connectOptions.password = password;
+  }
+  return connectOptions;
+}
+
+app.get('/api/ssh/sftp/download', (req, res) => {
+  const connectOptions = getSshParamsFromRequest(req);
+  const remotePath = String(req.query.remotePath || '').trim();
+  const isDir = req.query.isDir === 'true';
+  
+  if (!connectOptions) {
+    res.status(400).json({ error: 'host, port, username are required' });
+    return;
+  }
+  if (!remotePath) {
+    res.status(400).json({ error: 'remotePath is required' });
+    return;
+  }
+
+  const ssh = new SshClient();
+  let sftpClosed = false;
+  
+  const cleanup = () => {
+    if (!sftpClosed) {
+      sftpClosed = true;
+      ssh.end();
+    }
+  };
+
+  ssh.on('ready', () => {
+    if (isDir) {
+      // Download directory as tar.gz using SSH exec
+      const folderName = remotePath.split('/').pop() || 'folder';
+      const filename = folderName + '.tar.gz';
+      const dirName = remotePath.substring(0, remotePath.lastIndexOf('/')) || '/';
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Type', 'application/gzip');
+      
+      ssh.exec(`tar -czf - -C "${dirName}" "${folderName}"`, (err, stream) => {
+        if (err) {
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to start tar: ' + err.message });
+          }
+          cleanup();
+          return;
+        }
+        
+        stream.on('error', (err) => {
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Tar stream error: ' + err.message });
+          }
+          cleanup();
+        });
+        
+        stream.on('close', cleanup);
+        stream.pipe(res);
+      });
+    } else {
+      ssh.sftp((err, sftp) => {
+        if (err) {
+          res.status(500).json({ error: 'SFTP session failed: ' + err.message });
+          cleanup();
+          return;
+        }
+        const filename = remotePath.split('/').pop() || 'download';
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        
+        const readStream = sftp.createReadStream(remotePath);
+        readStream.on('error', (err) => {
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to read file: ' + err.message });
+          }
+          cleanup();
+        });
+        readStream.on('close', cleanup);
+        readStream.pipe(res);
+      });
+    }
+  });
+  
+  ssh.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSH connection error: ' + err.message });
+    }
+    cleanup();
+  });
+  
+  ssh.connect(connectOptions);
+});
+
+app.post('/api/ssh/sftp/upload', (req, res) => {
+  const connectOptions = getSshParamsFromRequest(req);
+  const remotePath = String(req.query.remotePath || req.headers['x-jump-remote-path'] || '').trim();
+  
+  if (!connectOptions) {
+    res.status(400).json({ error: 'host, port, username are required' });
+    return;
+  }
+  if (!remotePath) {
+    res.status(400).json({ error: 'remotePath is required' });
+    return;
+  }
+
+  const ssh = new SshClient();
+  let sftpClosed = false;
+  
+  const cleanup = () => {
+    if (!sftpClosed) {
+      sftpClosed = true;
+      ssh.end();
+    }
+  };
+
+  ssh.on('ready', () => {
+    ssh.sftp((err, sftp) => {
+      if (err) {
+        res.status(500).json({ error: 'SFTP session failed: ' + err.message });
+        cleanup();
+        return;
+      }
+      
+      const writeStream = sftp.createWriteStream(remotePath);
+      writeStream.on('error', (err) => {
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to write file: ' + err.message });
+        }
+        cleanup();
+      });
+      writeStream.on('close', () => {
+        if (!res.headersSent) {
+          res.json({ success: true, path: remotePath });
+        }
+        cleanup();
+      });
+      req.pipe(writeStream);
+    });
+  });
+  
+  ssh.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSH connection error: ' + err.message });
+    }
+    cleanup();
+  });
+  
+  ssh.connect(connectOptions);
+});
+
+app.get('/api/ssh/sftp/list', (req, res) => {
+  const connectOptions = getSshParamsFromRequest(req);
+  const remotePath = String(req.query.path || '').trim() || '.';
+  
+  if (!connectOptions) {
+    res.status(400).json({ error: 'host, port, username are required' });
+    return;
+  }
+
+  const ssh = new SshClient();
+  let sftpClosed = false;
+  
+  const cleanup = () => {
+    if (!sftpClosed) {
+      sftpClosed = true;
+      ssh.end();
+    }
+  };
+
+  ssh.on('ready', () => {
+    ssh.sftp((err, sftp) => {
+      if (err) {
+        res.status(500).json({ error: 'SFTP session failed: ' + err.message });
+        cleanup();
+        return;
+      }
+      
+      sftp.readdir(remotePath, (err, list) => {
+        if (err) {
+          res.status(500).json({ error: 'Failed to read directory: ' + err.message });
+          cleanup();
+          return;
+        }
+
+        sftp.realpath(remotePath, (err, absPath) => {
+           const finalPath = err ? remotePath : absPath;
+           
+           const entries = list.map(item => ({
+             name: item.filename,
+             isDir: item.attrs.isDirectory(),
+             isFile: item.attrs.isFile(),
+             isSymlink: item.attrs.isSymbolicLink(),
+             size: item.attrs.size,
+             mtime: item.attrs.mtime
+           }));
+           
+           // Sort directories first
+           entries.sort((a, b) => {
+             if (a.isDir && !b.isDir) return -1;
+             if (!a.isDir && b.isDir) return 1;
+             return a.name.localeCompare(b.name);
+           });
+
+           res.json({ path: finalPath, entries });
+           cleanup();
+        });
+      });
+    });
+  });
+  
+  ssh.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSH connection error: ' + err.message });
+    }
+    cleanup();
+  });
+  
+  ssh.connect(connectOptions);
+});
+
+app.post('/api/ssh/sftp/rename', (req, res) => {
+  const connectOptions = getSshParamsFromRequest(req);
+  const oldPath = String(req.body.oldPath || '').trim();
+  const newPath = String(req.body.newPath || '').trim();
+  
+  if (!connectOptions || !oldPath || !newPath) {
+    res.status(400).json({ error: 'host, port, username, oldPath, and newPath are required' });
+    return;
+  }
+
+  const ssh = new SshClient();
+  let sftpClosed = false;
+  
+  const cleanup = () => {
+    if (!sftpClosed) {
+      sftpClosed = true;
+      ssh.end();
+    }
+  };
+
+  ssh.on('ready', () => {
+    ssh.sftp((err, sftp) => {
+      if (err) {
+        res.status(500).json({ error: 'SFTP session failed: ' + err.message });
+        cleanup();
+        return;
+      }
+      
+      sftp.rename(oldPath, newPath, (err) => {
+        if (err) {
+          res.status(500).json({ error: 'Failed to rename: ' + err.message });
+        } else {
+          res.json({ success: true });
+        }
+        cleanup();
+      });
+    });
+  });
+  
+  ssh.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSH connection error: ' + err.message });
+    }
+    cleanup();
+  });
+  
+  ssh.connect(connectOptions);
+});
+
+app.delete('/api/ssh/sftp/delete', (req, res) => {
+  const connectOptions = getSshParamsFromRequest(req);
+  const targetPath = String(req.query.path || '').trim();
+  const isDir = String(req.query.isDir) === 'true';
+  
+  if (!connectOptions || !targetPath) {
+    res.status(400).json({ error: 'host, port, username, and path are required' });
+    return;
+  }
+
+  const ssh = new SshClient();
+  let sftpClosed = false;
+  
+  const cleanup = () => {
+    if (!sftpClosed) {
+      sftpClosed = true;
+      ssh.end();
+    }
+  };
+
+  ssh.on('ready', () => {
+    ssh.sftp((err, sftp) => {
+      if (err) {
+        res.status(500).json({ error: 'SFTP session failed: ' + err.message });
+        cleanup();
+        return;
+      }
+      
+      const callback = (err) => {
+        if (err) {
+          res.status(500).json({ error: 'Failed to delete: ' + err.message });
+        } else {
+          res.json({ success: true });
+        }
+        cleanup();
+      };
+
+      if (isDir) {
+        sftp.rmdir(targetPath, callback);
+      } else {
+        sftp.unlink(targetPath, callback);
+      }
+    });
+  });
+  
+  ssh.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'SSH connection error: ' + err.message });
+    }
+    cleanup();
+  });
+  
+  ssh.connect(connectOptions);
 });
 
 const sshWss = new WebSocketServer({ noServer: true });
@@ -1007,15 +1583,16 @@ server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
 
   // Basic cookie check for WebSocket upgrade
-  cookieParser(APP_SECRET)(req, {}, () => {
-    const sessionToken = req.signedCookies?.session_token;
-    if (sessionToken !== 'authenticated') {
+  cookieParser(APP_SECRET)(req, {}, async () => {
+    const user = await loadRequestUser(req.signedCookies?.session_token);
+    if (!user) {
       console.warn(`[AUTH] WebSocket upgrade denied: invalid session cookie for ${pathname}`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
+    req.user = user;
     proceedUpgrade(req, socket, head, pathname);
   });
 });

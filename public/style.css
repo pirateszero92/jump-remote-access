@@ -119,6 +119,27 @@ body::before {
   margin: 0 4px;
 }
 
+.theme-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.theme-picker select {
+  padding: 4px 8px;
+  font-size: 11px;
+  min-width: 120px;
+}
+
+.user-chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reports-link {
   display: inline-flex;
   align-items: center;
@@ -925,7 +946,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #0b1019;
-  color: var(--text2);
+  color: #cbd5e1;
   cursor: pointer;
 }
 
@@ -936,7 +957,7 @@ select option {
 .session-tab.active {
   border-color: #6077a2;
   background: #0d1422;
-  color: var(--text);
+  color: #ffffff;
 }
 
 .session-tab-icon {
@@ -1466,3 +1487,4 @@ select option {
 }
 .tcbtn.eb:hover { color: var(--blue); }
 .tcbtn.db:hover { color: var(--red); }
+.tcbtn.cb:hover { color: var(--accent); }
