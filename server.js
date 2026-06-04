@@ -49,6 +49,7 @@ const {
   userCanAccessTarget,
   findTargetForSession,
 } = require('./lib/permissions');
+const { getSnmpMetrics, getExporterMetrics } = require('./lib/monitor');
 
 const PORT = Number.parseInt(process.env.PORT || '8080', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -332,6 +333,8 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser(APP_SECRET));
 
+
+
 const PUBLIC_PATHS = new Set([
   '/api/login',
   '/login.html',
@@ -380,6 +383,32 @@ function requireRoles(...roles) {
 
 app.use((req, res, next) => {
   attachUser(req, res, next).catch(next);
+});
+
+app.get('/api/monitor/metrics', async (req, res) => {
+  try {
+    const host = String(req.query.host).trim();
+    const type = String(req.query.type).trim();
+    const community = String(req.query.community).trim() || 'public';
+    const port = parseInt(req.query.port) || (type === 'snmp' ? 161 : 9100);
+
+    if (!host) {
+      return res.status(400).json({ error: 'host is required' });
+    }
+
+    let metrics;
+    if (type === 'snmp') {
+      metrics = await getSnmpMetrics(host, community, port);
+    } else if (type === 'exporter') {
+      metrics = await getExporterMetrics(host, port);
+    } else {
+      return res.status(400).json({ error: 'Invalid monitor type. Use snmp or exporter.' });
+    }
+
+    res.json(metrics);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const websockifyProxy = createProxyMiddleware({
@@ -874,6 +903,7 @@ app.post('/api/session', async (req, res) => {
           label,
           password: String(req.body?.pass || ''),
           privateKey: String(req.body?.privateKey || '').trim(),
+          jumpUser: req.user.username,
           createdAt: Date.now(),
           expiresAt: Date.now() + TOKEN_TTL_MS,
         });
@@ -1366,6 +1396,7 @@ sshWss.on('connection', (ws, req) => {
         host,
         port,
         username,
+        jumpUser: sessionData?.jumpUser,
         label: sessionData?.label || `${username}@${host}`,
         cols: pendingResize.cols,
         rows: pendingResize.rows,

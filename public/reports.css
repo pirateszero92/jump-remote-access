@@ -138,6 +138,29 @@
   color: var(--text3);
 }
 
+.session-item-user {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.session-user-ssh {
+  color: var(--text3);
+  font-style: italic;
+}
+
+.session-user-jump {
+  color: var(--accent);
+}
+
+.session-user-unknown {
+  color: var(--text3);
+  opacity: 0.5;
+}
+
 .reports-main {
   flex: 1;
   min-width: 0;

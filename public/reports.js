@@ -1,6 +1,7 @@
 (function bootstrap() {
   const yearSelect = document.getElementById('filter-year');
   const monthSelect = document.getElementById('filter-month');
+  const userSelect = document.getElementById('filter-user');
   const loadButton = document.getElementById('btn-load-report');
   const sessionListEl = document.getElementById('session-list');
   const reportCountEl = document.getElementById('report-count');
@@ -24,6 +25,7 @@
   let fitAddon = null;
   let castEvents = [];
   let castHeader = null;
+  let fullReport = null;
   let keyEntries = [];
   let sessionDurationSec = 0;
   let replayTimer = null;
@@ -126,6 +128,50 @@
     return sessionDurationSec || 0;
   }
 
+  function getUserKey(session) {
+    return session.jumpUser || '';
+  }
+
+  function populateUserFilter(report) {
+    const currentVal = userSelect.value;
+    const users = new Set();
+
+    report.days.forEach((dayGroup) => {
+      dayGroup.sessions.forEach((session) => {
+        const key = getUserKey(session);
+        if (key) users.add(key);
+      });
+    });
+
+    // Rebuild options
+    userSelect.innerHTML = '<option value="">All users</option>';
+    Array.from(users).sort().forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      userSelect.appendChild(opt);
+    });
+
+    // Restore previous selection if still valid
+    if (currentVal && users.has(currentVal)) {
+      userSelect.value = currentVal;
+    }
+  }
+
+  function applyUserFilter(report) {
+    const selectedUser = userSelect.value;
+    if (!selectedUser) return report;
+
+    const filteredDays = report.days
+      .map((dayGroup) => ({
+        ...dayGroup,
+        sessions: dayGroup.sessions.filter((s) => getUserKey(s) === selectedUser),
+      }))
+      .filter((dayGroup) => dayGroup.sessions.length > 0);
+
+    return { ...report, days: filteredDays, total: filteredDays.reduce((n, d) => n + d.sessions.length, 0) };
+  }
+
   function renderSessionList(report) {
     sessionListEl.innerHTML = '';
 
@@ -148,9 +194,13 @@
         button.type = 'button';
         button.className = 'session-item';
         button.dataset.sessionId = session.id;
+        const userHtml = session.jumpUser
+          ? `<span class="session-user-jump">${session.jumpUser}</span>`
+          : `<span class="session-user-unknown">—</span>`;
         button.innerHTML = `
           <div class="session-item-title">${session.label}</div>
           <div class="session-item-meta">${formatDateTime(session.startedAt)} · ${formatDuration(session.durationSec)}</div>
+          <div class="session-item-user"><i class="fa-solid fa-user"></i> ${userHtml}</div>
         `;
 
         button.addEventListener('click', () => {
@@ -167,6 +217,13 @@
     });
   }
 
+  function applyFilterAndRender() {
+    if (!fullReport) return;
+    const filtered = applyUserFilter(fullReport);
+    reportCountEl.textContent = `${filtered.total} session(s)`;
+    renderSessionList(filtered);
+  }
+
   async function loadReport() {
     const year = yearSelect.value;
     const month = monthSelect.value;
@@ -176,8 +233,9 @@
     }
 
     const report = await api(`/api/ssh-recordings/report?${query.toString()}`);
-    reportCountEl.textContent = `${report.total} session(s)`;
-    renderSessionList(report);
+    fullReport = report;
+    populateUserFilter(report);
+    applyFilterAndRender();
   }
 
   function ensureTerminal() {
@@ -463,6 +521,10 @@
     loadReport().catch((error) => {
       sessionListEl.innerHTML = `<p class="reports-hint">${error.message}</p>`;
     });
+  });
+
+  userSelect.addEventListener('change', () => {
+    applyFilterAndRender();
   });
 
   playButton.addEventListener('click', startReplay);
