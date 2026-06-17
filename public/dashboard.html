@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Host Monitor Dashboard</title>
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <style>
+    body { background: var(--bg); color: var(--text); padding: 20px; }
+    .dash-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; }
+    .dash-header h1 { margin: 0; font-family: var(--display); font-size: 24px; font-weight: 800; color: var(--accent); }
+    .host-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+    .host-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .hc-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
+    .hc-title { font-size: 16px; font-weight: bold; }
+    .hc-type { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--surface2); color: var(--text2); }
+    
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .metric-box { background: var(--surface2); border-radius: 8px; padding: 15px; text-align: center; }
+    .mb-title { font-size: 11px; color: var(--text3); text-transform: uppercase; margin-bottom: 10px; }
+    
+    /* Memory Bar */
+    .mem-bar { height: 10px; background: var(--border2); border-radius: 5px; overflow: hidden; margin-bottom: 5px; position: relative; }
+    .mem-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+    .mem-text { font-size: 12px; color: var(--text2); font-family: var(--mono); }
+    
+    /* Disks */
+    .disk-item { text-align: left; margin-bottom: 10px; }
+    .disk-name { font-size: 11px; margin-bottom: 3px; display: flex; justify-content: space-between; }
+    .disk-bar { height: 6px; background: var(--border2); border-radius: 3px; overflow: hidden; }
+    .disk-fill { height: 100%; background: var(--blue); transition: width 0.3s; }
+    
+    /* Charts */
+    .chart-container { position: relative; height: 100px; width: 100%; }
+    .full-width { grid-column: 1 / -1; }
+    
+    .error-msg { color: var(--red); font-size: 12px; padding: 10px; text-align: center; background: rgba(255,0,0,0.1); border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="dash-header">
+    <i class="fa-solid fa-server" style="font-size: 28px; color: var(--accent);"></i>
+    <h1>Host Monitor Dashboard</h1>
+  </div>
+  
+  <div id="host-grid" class="host-grid">
+    <div style="color: var(--text3);">Loading targets...</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

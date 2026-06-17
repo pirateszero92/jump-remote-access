@@ -18,6 +18,7 @@
     "guacamole-lite": "^1.2.0",
     "http-proxy-middleware": "^3.0.5",
     "morgan": "^1.10.0",
+    "net-snmp": "^3.26.3",
     "ssh2": "^1.16.0",
     "ws": "^8.18.3"
   }

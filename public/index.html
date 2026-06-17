@@ -23,6 +23,7 @@
       JUMP - Remote Access
     </div>
     <div class="topbar-right">
+      <button class="tool-btn" id="btn-dashboard" onclick="window.open('/dashboard.html', '_blank')" style="margin-right: 10px; background: var(--accent); color: #000; font-weight: 700; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;"><i class="fa-solid fa-chart-pie"></i> Dashboard</button>
       <div class="schip"><div class="sdot g" id="chip-websockify"></div>websockify</div>
       <div class="schip"><div class="sdot g" id="chip-api"></div>API</div>
       <div class="schip"><div class="sdot a" id="chip-ssh-bridge"></div>SSH bridge</div>
@@ -107,6 +108,28 @@
             <div class="flabel">SSH Idle Timeout (minutes)</div>
             <input type="number" id="ssh-timeout-minutes" min="1" max="240" value="15">
             <div class="fhelp">กำหนดเวลาตัด session เมื่อไม่มี activity (ปรับใหม่ได้ตลอด)</div>
+          </div>
+
+          <div class="fld">
+            <div class="flabel">Host Monitoring</div>
+            <select id="monitor-type" onchange="toggleMonitorFields()">
+              <option value="none" selected>None</option>
+              <option value="snmp">SNMP v2c</option>
+              <option value="exporter">Prometheus Node Exporter</option>
+            </select>
+          </div>
+          
+          <div class="fld" id="monitor-snmp-wrap" style="display: none;">
+            <div class="flabel">SNMP Community & Port</div>
+            <div class="frow">
+              <input type="text" id="monitor-community" placeholder="public" style="flex: 1;">
+              <input type="number" id="monitor-snmp-port" placeholder="161" style="width: 80px;">
+            </div>
+          </div>
+
+          <div class="fld" id="monitor-exporter-wrap" style="display: none;">
+            <div class="flabel">Exporter Port</div>
+            <input type="number" id="monitor-exporter-port" placeholder="9100">
           </div>
 
           <div class="fld">

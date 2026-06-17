@@ -605,6 +605,12 @@ function updateProtocolDependentControls() {
   }
 }
 
+window.toggleMonitorFields = function toggleMonitorFields() {
+  const type = document.getElementById('monitor-type').value;
+  document.getElementById('monitor-snmp-wrap').style.display = type === 'snmp' ? '' : 'none';
+  document.getElementById('monitor-exporter-wrap').style.display = type === 'exporter' ? '' : 'none';
+};
+
 function setProto(proto, el, options = {}) {
   const applyDefaultPort = options.applyDefaultPort !== false;
   activeProto = proto;
@@ -766,6 +772,25 @@ function renderTargets() {
               <option value="SSH" ${target.proto === 'SSH' ? 'selected' : ''}>SSH</option>
             </select>
           </div>
+          <div class="full">
+            <div class="elabel">Host Monitoring</div>
+            <select class="einput" id="emonitortype-${target.id}" onchange="document.getElementById('emonitorsnmp-${target.id}').style.display = this.value === 'snmp' ? '' : 'none'; document.getElementById('emonitorexp-${target.id}').style.display = this.value === 'exporter' ? '' : 'none';">
+              <option value="none" ${(target.monitorType || 'none') === 'none' ? 'selected' : ''}>None</option>
+              <option value="snmp" ${target.monitorType === 'snmp' ? 'selected' : ''}>SNMP v2c</option>
+              <option value="exporter" ${target.monitorType === 'exporter' ? 'selected' : ''}>Prometheus Node Exporter</option>
+            </select>
+          </div>
+          <div class="full" id="emonitorsnmp-${target.id}" style="display: ${target.monitorType === 'snmp' ? '' : 'none'}">
+            <div class="elabel">SNMP Community & Port</div>
+            <div style="display: flex; gap: 7px;">
+              <input class="einput" id="emonitorcomm-${target.id}" value="${esca(target.monitorCommunity || 'public')}" style="flex: 1;">
+              <input class="einput" type="number" id="emonitorsnmpport-${target.id}" value="${target.monitorPort || 161}" style="width: 80px;">
+            </div>
+          </div>
+          <div class="full" id="emonitorexp-${target.id}" style="display: ${target.monitorType === 'exporter' ? '' : 'none'}">
+            <div class="elabel">Exporter Port</div>
+            <input class="einput" type="number" id="emonitorexpport-${target.id}" value="${target.monitorPort || 9100}">
+          </div>
         </div>
         <div class="ebtns">
           <button class="btn-save" type="button" onclick="saveEdit('${target.id}')">บันทึก</button>
@@ -791,6 +816,9 @@ async function saveEdit(id) {
     domain: document.getElementById(`edomain-${id}`)?.value.trim() || '',
     authMode: document.getElementById(`eauth-${id}`)?.value || 'local',
     proto: document.getElementById(`eproto-${id}`).value,
+    monitorType: document.getElementById(`emonitortype-${id}`).value,
+    monitorCommunity: document.getElementById(`emonitorcomm-${id}`).value.trim(),
+    monitorPort: document.getElementById(`emonitortype-${id}`).value === 'snmp' ? Number.parseInt(document.getElementById(`emonitorsnmpport-${id}`).value, 10) : Number.parseInt(document.getElementById(`emonitorexpport-${id}`).value, 10),
   };
 
   try {
@@ -835,6 +863,18 @@ async function selectTarget(id) {
     if (domainInput) {
       domainInput.value = target.domain || '';
     }
+    
+    const monitorTypeSelect = document.getElementById('monitor-type');
+    if (monitorTypeSelect) {
+      monitorTypeSelect.value = target.monitorType || 'none';
+      if (target.monitorType === 'snmp') {
+        document.getElementById('monitor-community').value = target.monitorCommunity || 'public';
+        document.getElementById('monitor-snmp-port').value = target.monitorPort || 161;
+      } else if (target.monitorType === 'exporter') {
+        document.getElementById('monitor-exporter-port').value = target.monitorPort || 9100;
+      }
+      window.toggleMonitorFields();
+    }
 
     const tabId = target.proto === 'SSH' ? 'tab-ssh' : target.proto === 'RDP' ? 'tab-rdp' : 'tab-vnc';
     setProto(target.proto, document.getElementById(tabId), { applyDefaultPort: false });
@@ -856,6 +896,10 @@ async function handleConnect() {
   const authMode = authModeSelect?.value === 'domain' ? 'domain' : 'local';
   const label = document.getElementById('label').value.trim() || ip;
   const proto = activeProto;
+  
+  const monitorType = document.getElementById('monitor-type').value;
+  const monitorCommunity = document.getElementById('monitor-community').value.trim() || 'public';
+  const monitorPort = monitorType === 'snmp' ? (Number.parseInt(document.getElementById('monitor-snmp-port').value, 10) || 161) : (Number.parseInt(document.getElementById('monitor-exporter-port').value, 10) || 9100);
 
   if (!ip) {
     showToast('กรุณาใส่ IP Address ก่อน');
@@ -905,6 +949,9 @@ async function handleConnect() {
         privateKey,
         domain,
         authMode,
+        monitorType,
+        monitorCommunity,
+        monitorPort,
       });
 
       addLog('ok', `Saved target: ${label}`);
