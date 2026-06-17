@@ -20,6 +20,10 @@
   const reportsSidebarEl = document.getElementById('reports-sidebar');
   const sidebarBackdropEl = document.getElementById('sidebar-backdrop');
   const sidebarToggleBtn = document.getElementById('btn-sidebar-toggle');
+  const resizerEl = document.getElementById('replay-resizer');
+  const keystrokePanelEl = document.getElementById('keystroke-panel');
+  const keystrokeSearchEl = document.getElementById('keystroke-search');
+  const keystrokeListEl = document.getElementById('keystroke-list');
 
   let terminal = null;
   let fitAddon = null;
@@ -27,6 +31,9 @@
   let castHeader = null;
   let fullReport = null;
   let keyEntries = [];
+  let groupedKeystrokes = [];
+  let keystrokeSearchQuery = '';
+  let isDragging = false;
   let sessionDurationSec = 0;
   let replayTimer = null;
   let replayIndex = 0;
@@ -118,6 +125,152 @@
     }
 
     return new Date(value).toLocaleString();
+  }
+
+  function formatKeyChar(keys) {
+    if (!keys) return '';
+    let formatted = '';
+    for (let i = 0; i < keys.length; i++) {
+      const charCode = keys.charCodeAt(i);
+      if (keys.substring(i).startsWith('\u001b[A')) {
+        formatted += '<span class="keystroke-special">↑</span>';
+        i += 2;
+      } else if (keys.substring(i).startsWith('\u001b[B')) {
+        formatted += '<span class="keystroke-special">↓</span>';
+        i += 2;
+      } else if (keys.substring(i).startsWith('\u001b[C')) {
+        formatted += '<span class="keystroke-special">→</span>';
+        i += 2;
+      } else if (keys.substring(i).startsWith('\u001b[D')) {
+        formatted += '<span class="keystroke-special">←</span>';
+        i += 2;
+      } else if (charCode === 13 || charCode === 10) {
+        formatted += '<span class="keystroke-special">Enter</span>';
+      } else if (charCode === 127 || charCode === 8) {
+        formatted += '<span class="keystroke-special">Backspace</span>';
+      } else if (charCode === 9) {
+        formatted += '<span class="keystroke-special">Tab</span>';
+      } else if (charCode === 27) {
+        formatted += '<span class="keystroke-special">Esc</span>';
+      } else if (charCode === 3) {
+        formatted += '<span class="keystroke-special">Ctrl+C</span>';
+      } else if (charCode === 4) {
+        formatted += '<span class="keystroke-special">Ctrl+D</span>';
+      } else if (charCode < 32) {
+        formatted += `<span class="keystroke-special">Ctrl+${String.fromCharCode(charCode + 64)}</span>`;
+      } else {
+        const char = keys[i];
+        if (char === '<') formatted += '&lt;';
+        else if (char === '>') formatted += '&gt;';
+        else if (char === '&') formatted += '&amp;';
+        else formatted += char;
+      }
+    }
+    return formatted;
+  }
+
+  function isSpecialKey(keys) {
+    if (!keys) return false;
+    for (let i = 0; i < keys.length; i++) {
+      const charCode = keys.charCodeAt(i);
+      if (charCode < 32 || charCode === 127 || keys.includes('\u001b[')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function groupKeystrokes(entries) {
+    const groups = [];
+    let currentGroup = null;
+
+    entries.forEach((entry) => {
+      const isSpecial = isSpecialKey(entry.keys);
+      
+      if (!currentGroup) {
+        currentGroup = {
+          t: entry.t,
+          keys: entry.keys,
+          isSpecial: isSpecial
+        };
+      } else {
+        const prevEntry = entries[entries.indexOf(entry) - 1];
+        const timeFromLast = prevEntry ? (entry.t - prevEntry.t) : 0;
+        
+        if (timeFromLast > 1.5 || isSpecial || currentGroup.isSpecial) {
+          groups.push(currentGroup);
+          currentGroup = {
+            t: entry.t,
+            keys: entry.keys,
+            isSpecial: isSpecial
+          };
+        } else {
+          currentGroup.keys += entry.keys;
+        }
+      }
+    });
+
+    if (currentGroup) {
+      groups.push(currentGroup);
+    }
+
+    return groups;
+  }
+
+  function renderKeystrokeList() {
+    keystrokeListEl.innerHTML = '';
+    
+    const query = keystrokeSearchQuery.toLowerCase().trim();
+    const filtered = groupedKeystrokes.filter(item => {
+      return item.keys.toLowerCase().includes(query);
+    });
+
+    if (filtered.length === 0) {
+      keystrokeListEl.innerHTML = '<div class="reports-hint" style="text-align: center; padding: 20px;">No keystrokes found</div>';
+      return;
+    }
+
+    filtered.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'keystroke-item';
+      div.dataset.t = item.t;
+      
+      const formattedTime = formatClock(item.t);
+      
+      div.innerHTML = `
+        <span class="keystroke-time">${formattedTime}</span>
+        <span class="keystroke-value">${formatKeyChar(item.keys)}</span>
+      `;
+      
+      div.addEventListener('click', () => {
+        seekTo(item.t, { resume: true });
+      });
+      
+      keystrokeListEl.appendChild(div);
+    });
+  }
+
+  function highlightCurrentKeystroke(elapsed) {
+    let activeItem = null;
+    
+    for (let i = 0; i < groupedKeystrokes.length; i++) {
+      if (groupedKeystrokes[i].t <= elapsed) {
+        activeItem = groupedKeystrokes[i];
+      } else {
+        break;
+      }
+    }
+    
+    const items = keystrokeListEl.querySelectorAll('.keystroke-item');
+    items.forEach(el => el.classList.remove('active'));
+    
+    if (activeItem) {
+      const activeEl = Array.from(items).find(el => parseFloat(el.dataset.t) === activeItem.t);
+      if (activeEl) {
+        activeEl.classList.add('active');
+        activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
   }
 
   function getTotalDuration() {
@@ -316,6 +469,7 @@
 
     timelineCurrentEl.textContent = formatClock(clamped);
     timelineTotalEl.textContent = formatClock(duration);
+    highlightCurrentKeystroke(clamped);
   }
 
   function rebuildTerminalUntil(targetSec) {
@@ -470,6 +624,11 @@
     castHeader = JSON.parse(lines[0]);
     castEvents = lines.slice(1).map((line) => JSON.parse(line));
     keyEntries = keysPayload.entries || [];
+    groupedKeystrokes = groupKeystrokes(keyEntries);
+    keystrokeSearchEl.value = '';
+    keystrokeSearchQuery = '';
+    renderKeystrokeList();
+
     sessionDurationSec = meta.durationSec || 0;
     replayIndex = 0;
     replayPausedAt = 0;
@@ -535,6 +694,13 @@
   sidebarBackdropEl.addEventListener('click', closeSidebar);
 
   window.addEventListener('resize', () => {
+    if (!isNarrowLayout()) {
+      replayTerminalEl.style.height = '';
+      keystrokePanelEl.style.height = '';
+    } else {
+      keystrokePanelEl.style.width = '';
+    }
+
     if (!reportDetailEl.classList.contains('hidden')) {
       fitReplayTerminal();
     }
@@ -542,6 +708,54 @@
     if (!isNarrowLayout()) {
       closeSidebar();
     }
+  });
+
+  // Resizer dragging logic
+  resizerEl.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    document.body.style.cursor = isNarrowLayout() ? 'row-resize' : 'col-resize';
+    resizerEl.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const containerRect = document.querySelector('.replay-content').getBoundingClientRect();
+    
+    if (isNarrowLayout()) {
+      const newHeight = containerRect.bottom - e.clientY;
+      const maxHeight = containerRect.height * 0.8;
+      const minHeight = 80;
+      if (newHeight >= minHeight && newHeight <= maxHeight) {
+        keystrokePanelEl.style.height = `${newHeight}px`;
+        const terminalHeight = containerRect.height - newHeight - 14;
+        replayTerminalEl.style.height = `${terminalHeight}px`;
+        fitReplayTerminal();
+      }
+    } else {
+      const newWidth = containerRect.right - e.clientX;
+      const maxWidth = containerRect.width * 0.6;
+      const minWidth = 150;
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        keystrokePanelEl.style.width = `${newWidth}px`;
+        fitReplayTerminal();
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      document.body.style.cursor = '';
+      resizerEl.classList.remove('dragging');
+      fitReplayTerminal();
+    }
+  });
+
+  // Keystroke search logic
+  keystrokeSearchEl.addEventListener('input', (e) => {
+    keystrokeSearchQuery = e.target.value;
+    renderKeystrokeList();
   });
 
   if (typeof ResizeObserver !== 'undefined') {

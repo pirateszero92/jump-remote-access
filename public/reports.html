@@ -96,7 +96,19 @@
           </header>
 
           <div class="replay-display">
-            <div id="replay-terminal" class="replay-terminal"></div>
+            <div class="replay-content">
+              <div id="replay-terminal" class="replay-terminal"></div>
+              <div class="resizer" id="replay-resizer"></div>
+              <div id="keystroke-panel" class="keystroke-panel">
+                <div class="panel-header">
+                  <div class="panel-title"><i class="fa-solid fa-keyboard"></i> Keystroke Log</div>
+                  <div class="panel-search-wrap">
+                    <input type="text" id="keystroke-search" placeholder="Search keys..." class="panel-search-input">
+                  </div>
+                </div>
+                <div class="panel-body" id="keystroke-list"></div>
+              </div>
+            </div>
           </div>
 
           <footer class="replay-timeline">
