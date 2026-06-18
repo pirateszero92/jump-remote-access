@@ -21,6 +21,7 @@ const {
   findSession,
   getReport,
   readSessionFile,
+  deleteSession,
 } = require('./lib/ssh-recorder');
 const {
   loadRequestUser,
@@ -689,6 +690,20 @@ app.get('/api/ssh-recordings/:sessionId/keys', requireRoles(ROLES.SUPERADMIN), a
     res.json({ sessionId: payload.meta.id, entries: lines });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unable to load keystroke log' });
+  }
+});
+
+app.delete('/api/ssh-recordings/:sessionId', requireRoles(ROLES.SUPERADMIN), async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '').trim();
+    const deleted = await deleteSession(SSH_RECORD_DIR, sessionId);
+    if (!deleted) {
+      res.status(404).json({ error: 'Session recording not found' });
+      return;
+    }
+    res.json({ status: 'ok' });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to delete session recording' });
   }
 });
 

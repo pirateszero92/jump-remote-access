@@ -43,6 +43,7 @@
   let scrubbing = false;
   let activeSessionId = null;
   let resizeObserver = null;
+  let currentUser = null;
 
   function initYearOptions() {
     const now = new Date();
@@ -325,6 +326,40 @@
     return { ...report, days: filteredDays, total: filteredDays.reduce((n, d) => n + d.sessions.length, 0) };
   }
 
+  async function confirmDeleteSession(session) {
+    const confirmed = confirm(`ต้องการลบ session "${session.label}" ใช่หรือไม่?\nการดำเนินการนี้จะลบไฟล์บันทึกทั้งหมดอย่างถาวรและไม่สามารถเรียกคืนได้`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/ssh-recordings/${encodeURIComponent(session.id)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        let message = `HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          message = payload.error || message;
+        } catch {}
+        throw new Error(message);
+      }
+
+      if (activeSessionId === session.id) {
+        activeSessionId = null;
+        stopReplay();
+        reportEmptyEl.classList.remove('hidden');
+        reportDetailEl.classList.add('hidden');
+      }
+
+      await loadReport();
+    } catch (error) {
+      alert(`ลบไม่สำเร็จ: ${error.message}`);
+    }
+  }
+
   function renderSessionList(report) {
     sessionListEl.innerHTML = '';
 
@@ -332,6 +367,8 @@
       sessionListEl.innerHTML = '<p class="reports-hint">ไม่มี session ในช่วงที่เลือก</p>';
       return;
     }
+
+    const isSuperAdmin = currentUser && currentUser.role === 'superadmin';
 
     report.days.forEach((dayGroup) => {
       const group = document.createElement('div');
@@ -343,6 +380,9 @@
       group.appendChild(title);
 
       dayGroup.sessions.forEach((session) => {
+        const itemWrap = document.createElement('div');
+        itemWrap.className = 'session-item-wrap';
+
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'session-item';
@@ -363,7 +403,22 @@
           }
         });
 
-        group.appendChild(button);
+        itemWrap.appendChild(button);
+
+        if (isSuperAdmin) {
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'session-delete-btn';
+          deleteBtn.title = 'Delete recording';
+          deleteBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+          deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirmDeleteSession(session);
+          });
+          itemWrap.appendChild(deleteBtn);
+        }
+
+        group.appendChild(itemWrap);
       });
 
       sessionListEl.appendChild(group);
@@ -779,6 +834,7 @@
     if (!profile.permissions?.reports) {
       window.location.href = '/';
     }
+    currentUser = profile;
   }
 
   initYearOptions();
