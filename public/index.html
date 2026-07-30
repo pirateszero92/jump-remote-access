@@ -23,11 +23,11 @@
       JUMP - Remote Access
     </div>
     <div class="topbar-right">
-      <button class="tool-btn" id="btn-dashboard" onclick="window.open('/dashboard.html', '_blank')" style="margin-right: 10px; background: var(--accent); color: #000; font-weight: 700; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;"><i class="fa-solid fa-chart-pie"></i> Dashboard</button>
-      <div class="schip"><div class="sdot g" id="chip-websockify"></div>websockify</div>
-      <div class="schip"><div class="sdot g" id="chip-api"></div>API</div>
-      <div class="schip"><div class="sdot a" id="chip-ssh-bridge"></div>SSH bridge</div>
-      <div class="schip"><div class="sdot g"></div><span id="clock">--:--:--</span></div>
+      <button class="tool-btn" id="btn-dashboard" onclick="window.open('/dashboard.html', '_blank')" style="background: var(--accent); color: #000; font-weight: 700; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;"><i class="fa-solid fa-chart-pie"></i> Dashboard</button>
+      <div class="schip" title="websockify status"><div class="sdot g" id="chip-websockify"></div><span class="chip-label">websockify</span></div>
+      <div class="schip" title="API status"><div class="sdot g" id="chip-api"></div><span class="chip-label">API</span></div>
+      <div class="schip" title="SSH bridge status"><div class="sdot a" id="chip-ssh-bridge"></div><span class="chip-label">SSH bridge</span></div>
+      <div class="schip" title="System clock"><div class="sdot g"></div><span id="clock">--:--:--</span></div>
       <div class="schip user-chip" id="user-chip" title="Signed-in user">—</div>
       <label class="theme-picker" title="Color theme">
         <span class="flabel">Theme</span>

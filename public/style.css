@@ -55,11 +55,14 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   z-index: 10;
   flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .logo {
@@ -106,10 +109,31 @@ body::before {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: clamp(6px, 1vw, 16px);
   font-size: 11px;
   color: var(--text2);
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+  padding: 2px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.topbar-right::-webkit-scrollbar {
+  height: 4px;
+}
+
+.topbar-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.topbar-right::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 4px;
 }
 
 .vseparator {
@@ -235,8 +259,8 @@ body::before {
 }
 
 .panel-left .pscroll {
-  width: 339px;
-  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
 }
 
 /* Sidebar Toggle Button */
@@ -270,7 +294,10 @@ body::before {
 
 .pscroll {
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .pscroll::-webkit-scrollbar {
@@ -520,7 +547,9 @@ select option {
 
 .tscroll {
   overflow-y: auto;
-  max-height: clamp(220px, 36vh, 420px);
+  flex: 1;
+  min-height: 150px;
+  max-height: clamp(220px, 45vh, 500px);
   border-top: 1px solid var(--border);
 }
 
@@ -1370,19 +1399,54 @@ select option {
   box-shadow: 0 0 7px var(--accent);
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1440px) {
   .topbar {
-    padding: 10px 14px;
+    padding: 8px 16px;
   }
 
   .topbar-right {
     gap: 10px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .schip .chip-label,
+  .schip #clock {
+    display: none;
+  }
+
+  .theme-picker .flabel {
+    display: none;
+  }
+
+  .theme-picker select {
+    min-width: 85px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .topbar {
+    padding: 8px 12px;
+  }
+
+  .topbar-right {
+    gap: 8px;
     font-size: 10px;
   }
 
   .panel-left {
     width: 300px;
     min-width: 300px;
+  }
+
+  .reports-link {
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  .logout-btn {
+    padding: 5px 9px;
+    font-size: 10px;
   }
 }
 
