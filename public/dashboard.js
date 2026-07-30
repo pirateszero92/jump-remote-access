@@ -1,3 +1,13 @@
+// HTML escaping helper function to prevent XSS
+function esc(val) {
+  return String(val ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 // Format bytes to readable string
 function formatBytes(bytes, decimals = 2) {
   if (bytes === 0) return '0 Bytes';
@@ -43,7 +53,7 @@ async function loadDashboard() {
 
     grid.innerHTML = '';
     monitored.forEach(target => {
-      const id = target.id;
+      const id = esc(target.id);
       const typeLabel = target.monitorType === 'snmp' ? 'SNMP' : 'Prometheus';
       
       const card = document.createElement('div');
@@ -51,8 +61,8 @@ async function loadDashboard() {
       card.id = `card-${id}`;
       card.innerHTML = `
         <div class="hc-header">
-          <div class="hc-title">${target.name || target.ip}</div>
-          <div class="hc-type">${typeLabel}</div>
+          <div class="hc-title">${esc(target.name || target.ip)}</div>
+          <div class="hc-type">${esc(typeLabel)}</div>
         </div>
         <div id="err-${id}" class="error-msg" style="display:none;"></div>
         <div class="metrics-grid" id="metrics-${id}">
@@ -237,7 +247,7 @@ async function pollTarget(target) {
       return `
         <div class="disk-item">
           <div class="disk-name">
-            <span>${d.name}</span>
+            <span>${esc(d.name)}</span>
             <span>${formatBytes(d.used)} / ${formatBytes(d.total)} (${pct.toFixed(1)}%)</span>
           </div>
           <div class="disk-bar"><div class="disk-fill" style="width: ${pct}%"></div></div>

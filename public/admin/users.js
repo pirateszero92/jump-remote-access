@@ -214,8 +214,8 @@
     const newPass = rpPassword.value;
     const confirm = rpConfirm.value;
 
-    if (!newPass || newPass.length < 6) {
-      setRpMessage('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร', true);
+    if (!newPass || newPass.length < 8) {
+      setRpMessage('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร', true);
       return;
     }
 
